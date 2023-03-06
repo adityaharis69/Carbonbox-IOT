@@ -1,9 +1,16 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <PubSubClient.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
-#define pwmPin GPIO_NUM_33
-#define pwmPin2 GPIO_NUM_32
+#define pwmPin GPIO_NUM_33       // co2 New
+#define pwmPin2 GPIO_NUM_32      // co2 Old
+#define phPin GPIO_NUM_34        // ph
+#define watherTemPin GPIO_NUM_19 // pin DS18B20
+
+OneWire oneWire(watherTemPin);
+DallasTemperature sensors(&oneWire);
 
 const char *ssid = "Neurabot";
 const char *password = "Kempul4321!";
@@ -11,15 +18,110 @@ const char *password = "Kempul4321!";
 #define WIFI_TIMEOUT_MS 20000      // 20 second WiFi connection timeout
 #define WIFI_RECOVER_TIME_MS 30000 // Wait 30 seconds after a failed connection attempt
 
-static const BaseType_t app_cpu = 0;
-static const BaseType_t pro_cpu = 1;
-int *co2_Input_Contraction;
-int *co2_Ouput_Contraction;
+#define Offset 0.00 // deviation compensate
+#define samplingInterval 20
+#define ArrayLenth 40 // times of collection
 
-void mh_z14a_task(void *Parameters)
+int co2_Input_Contraction;
+int co2_Ouput_Contraction;
+static float pHValue;
+float wather_Temp;
+
+void sensor_watherTemp_task(void *Parameters)
 {
-  int co2;
-  co2_Input_Contraction = &co2;
+  sensors.begin();
+
+  while (true)
+  {
+    sensors.requestTemperatures();
+    wather_Temp = sensors.getTempCByIndex(0);
+
+    vTaskDelay(pdMS_TO_TICKS(3000));
+  }
+}
+
+void sensor_ph_task(void *Parameter)
+{
+  int pHArray[ArrayLenth]; // Store the average value of the sensor feedback
+  int pHArrayIndex = 0;
+  static float voltage;
+  static unsigned long samplingTime = millis();
+  static unsigned long printTime = millis();
+
+  while (true)
+  {
+    if (millis() - samplingTime > samplingInterval)
+    {
+      pHArray[pHArrayIndex++] = analogRead(phPin);
+      if (pHArrayIndex == ArrayLenth)
+        pHArrayIndex = 0;
+      voltage = avergearray(pHArray, ArrayLenth) * 3.3 / 4095;
+      pHValue = 3.5 * voltage + Offset;
+      samplingTime = millis();
+    }
+    vTaskDelay(pdMS_TO_TICKS(3000)); // wait for 1 second before reading again
+  }
+}
+
+double avergearray(int *arr, int number)
+{
+  int i;
+  int max, min;
+  double avg;
+  long amount = 0;
+  if (number <= 0)
+  {
+    Serial.println("Error number for the array to avraging!/n");
+    return 0;
+  }
+  if (number < 5)
+  { // less than 5, calculated directly statistics
+    for (i = 0; i < number; i++)
+    {
+      amount += arr[i];
+    }
+    avg = amount / number;
+    return avg;
+  }
+  else
+  {
+    if (arr[0] < arr[1])
+    {
+      min = arr[0];
+      max = arr[1];
+    }
+    else
+    {
+      min = arr[1];
+      max = arr[0];
+    }
+    for (i = 2; i < number; i++)
+    {
+      if (arr[i] < min)
+      {
+        amount += min; // arr<min
+        min = arr[i];
+      }
+      else
+      {
+        if (arr[i] > max)
+        {
+          amount += max; // arr>max
+          max = arr[i];
+        }
+        else
+        {
+          amount += arr[i]; // min<=arr<=max
+        }
+      } // if
+    }   // for
+    avg = (double)amount / (number - 2);
+  } // if
+  return avg;
+}
+
+void mh_z14a_New_Task(void *Parameters)
+{
   pinMode(pwmPin, INPUT_PULLDOWN);
   while (true)
   {
@@ -41,17 +143,15 @@ void mh_z14a_task(void *Parameters)
     while (digitalRead(pwmPin) == HIGH)
     {
     }
-    co2 = int(ppm);
-    co2_Input_Contraction = &co2;
-    vTaskDelay(3000 / portTICK_PERIOD_MS); // wait for 1 second before reading again
+    co2_Input_Contraction = int(ppm);
+    vTaskDelay(pdMS_TO_TICKS(3000)); // wait for 1 second before reading again
   }
   // vTaskDelete(NULL);
 }
 
-void mh_z14a_task2(void *Parameters)
+void mh_z14a_Old_task(void *Parameters)
 {
-  int co2;
-  co2_Ouput_Contraction = &co2;
+
   pinMode(pwmPin2, INPUT_PULLDOWN);
   while (true)
   {
@@ -73,27 +173,26 @@ void mh_z14a_task2(void *Parameters)
     while (digitalRead(pwmPin2) == HIGH)
     {
     }
-    co2 = int(ppm);
-    co2_Ouput_Contraction = &co2;
-    vTaskDelay(3000 / portTICK_PERIOD_MS); // wait for 1 second before reading again
+    co2_Ouput_Contraction = int(ppm);
+    vTaskDelay(pdMS_TO_TICKS(3000)); // wait for 1 second before reading again
   }
   // vTaskDelete(NULL);
 }
 
-void prinDataSensor(void *Parameters)
+void prinDataSensor(void)
 {
-
-  while (true)
-  {
-    /* code */
-    // Serial.print("CO2 INPUT: ");
-    Serial.print(*co2_Input_Contraction);
-    Serial.print("\t\t");
-    // Serial.print("CO2 OUTPUT: ");
-    Serial.println(*co2_Ouput_Contraction);
-    vTaskDelay(9000 / portTICK_PERIOD_MS);
-  }
-  // vTaskDelete(NULL);
+  /* code */
+  Serial.print("DS18B20 : ");
+  Serial.print(wather_Temp);
+  Serial.print("\t\t");
+  Serial.print("CO2 INPUT: ");
+  Serial.print(co2_Input_Contraction);
+  Serial.print("\t\t");
+  Serial.print("CO2 OUTPUT: ");
+  Serial.print(co2_Ouput_Contraction);
+  Serial.print("\t\t");
+  Serial.print("PH : ");
+  Serial.println(pHValue);
 }
 
 void keepWiFiAlive(void *parameter)
@@ -118,8 +217,6 @@ void keepWiFiAlive(void *parameter)
     {
     }
 
-    // When we couldn't make a WiFi connection (or the timeout expired)
-    // sleep for a while and then retry.
     if (WiFi.status() != WL_CONNECTED)
     {
       Serial.println("[WIFI] FAILED");
@@ -134,10 +231,9 @@ void keepWiFiAlive(void *parameter)
 void setup()
 {
   // initialize LEDC and other setup code
-
   Serial.begin(112500);
   Serial.println("-----------------DATABIOTA PROJECT---------------------");
-  vTaskDelay(3000);
+  // vTaskDelay(180000);
 
   Serial.println(WiFi.localIP());
   xTaskCreatePinnedToCore(
@@ -147,38 +243,47 @@ void setup()
       NULL,            // Parameter
       1,               // Task priority
       NULL,            // Task handle
-      ARDUINO_RUNNING_CORE);
+      0);
 
   xTaskCreatePinnedToCore(
-      mh_z14a_task,
-      "mh_z14a_task", // Task name
-      4098,           // Stack size (bytes)
-      NULL,           // Parameter
-      1,              // Task priority
-      NULL,           // Task handle
-      pro_cpu);
+      mh_z14a_New_Task,
+      "mh_z14a_New_Task", // Task name
+      5122,               // Stack size (bytes)
+      NULL,               // Parameter
+      1,                  // Task priority
+      NULL,               // Task handle
+      1);
 
   xTaskCreatePinnedToCore(
-      prinDataSensor,
-      "prinDataSensor", // Task name
-      1024,             // Stack size (bytes)
+      mh_z14a_Old_task,
+      "mh_z14a_Old_task", // Task name
+      5122,               // Stack size (bytes)
+      NULL,               // Parameter
+      1,                  // Task priority
+      NULL,               // Task handle
+      1);
+
+  xTaskCreatePinnedToCore(
+      sensor_ph_task,
+      "sensor_ph_task", // Task name
+      2048,             // Stack size (bytes)
       NULL,             // Parameter
       1,                // Task priority
       NULL,             // Task handle
-      pro_cpu);
+      1);
 
   xTaskCreatePinnedToCore(
-      mh_z14a_task2,
-      "mh_z14a_task2", // Task name
-      4098,            // Stack size (bytes)
-      NULL,            // Parameter
-      1,               // Task priority
-      NULL,            // Task handle
-      pro_cpu);
-
-  // vTaskStartScheduler();
+      sensor_watherTemp_task,
+      "sensor_watherTemp_task", // Task name
+      2048,                     // Stack size (bytes)
+      NULL,                     // Parameter
+      1,                        // Task priority
+      NULL,                     // Task handle
+      1);
 }
 void loop()
 {
   // other loop code
+  prinDataSensor();
+  delay(9000);
 }
