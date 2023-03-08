@@ -5,8 +5,6 @@
 #include <PubSubClient.h>
 #include <Wire.h>
 
-// #define MQTT_HOST IPAddress(192, 168, 1, 5)
-
 #define MQTT_PORT 1883
 const char *mqtt_server = "test.mosquitto.org";
 
@@ -59,18 +57,6 @@ void callback(char *topic, byte *payload, unsigned int length)
     Serial.print((char)payload[i]);
   }
   Serial.println();
-
-  // Switch on the LED if an 1 was received as first character
-  if ((char)payload[0] == '1')
-  {
-    digitalWrite(BUILTIN_LED, LOW); // Turn the LED on (Note that LOW is the voltage level
-    // but actually the LED is on; this is because
-    // it is active low on the ESP-01)
-  }
-  if ((char)payload[0] == '0')
-  {
-    digitalWrite(BUILTIN_LED, HIGH); // Turn the LED off by making the voltage HIGH
-  }
 }
 
 void reconnect()
@@ -324,7 +310,6 @@ void keepWiFiAlive(void *parameter)
 
 void setup()
 {
-  // initialize LEDC and other setup code
   Serial.begin(112500);
   Serial.println("-----------------DATABIOTA PROJECT---------------------");
   // vTaskDelay(180000);
@@ -390,9 +375,6 @@ void setup()
 }
 void loop()
 {
-  // // other loop code
-  // prinDataSensor();
-  // delay(9000);
 
   if (!client.connected())
   {
