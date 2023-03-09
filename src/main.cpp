@@ -4,6 +4,7 @@
 #include <DallasTemperature.h>
 #include <PubSubClient.h>
 #include <Wire.h>
+#include <string>
 
 #define MQTT_PORT 1883
 const char *mqtt_server = "test.mosquitto.org";
@@ -44,7 +45,7 @@ const char *password = "Kempul4321!";
 
 int co2_Input_Contraction;
 int co2_Ouput_Contraction;
-static float pHValue;
+float ph_value;
 float wather_Temp;
 
 void callback(char *topic, byte *payload, unsigned int length)
@@ -59,23 +60,46 @@ void callback(char *topic, byte *payload, unsigned int length)
   Serial.println();
 }
 
-void reconnect()
+void reconnect(int number, const char *valueSensor)
 {
   // Loop until we're reconnected
   while (!client.connected())
   {
     Serial.print("Attempting MQTT connection...");
     // Create a random client ID
-    String clientId = "ESP8266Client-";
+    String clientId = "ESP32Client-";
     clientId += String(random(0xffff), HEX);
     // Attempt to connect
     if (client.connect(clientId.c_str()))
     {
-      Serial.println("connected");
-      // Once connected, publish an announcement...
-      client.publish("codersid/nodemcu/v1", "hello world");
-      // ... and resubscribe
-      client.subscribe("codersid/nodemcu/v1");
+      if (number == 1)
+      {
+        client.publish(MQTT_PUB_CO2input, valueSensor);
+      }
+      else if (number == 2)
+      {
+        client.publish(MQTT_PUB_CO2output, valueSensor);
+      }
+      else if (number == 3)
+      {
+        client.publish(MQTT_PUB_ph, valueSensor);
+      }
+      else if (number == 4)
+      {
+        client.publish(MQTT_PUB_WatherTemp, valueSensor);
+      }
+      else if (number == 5)
+      {
+        client.publish(MQTT_PUB_AirTemp, valueSensor);
+      }
+      else if (number == 6)
+      {
+        client.publish(MQTT_PUB_rh, valueSensor);
+      }
+      else if (number == 7)
+      {
+        client.publish(MQTT_PUB_tbd, valueSensor);
+      }
     }
     else
     {
@@ -105,6 +129,8 @@ void sensor_ph_task(void *Parameter)
   int pHArray[ArrayLenth]; // Store the average value of the sensor feedback
   int pHArrayIndex = 0;
   static float voltage;
+  char myChar[10];
+  const char *pHValue;
   static unsigned long samplingTime = millis();
   static unsigned long printTime = millis();
 
@@ -116,9 +142,19 @@ void sensor_ph_task(void *Parameter)
       if (pHArrayIndex == ArrayLenth)
         pHArrayIndex = 0;
       voltage = avergearray(pHArray, ArrayLenth) * 3.3 / 4095;
-      pHValue = 3.5 * voltage + Offset;
+      ph_value = 3.5 * voltage + Offset;
+      dtostrf(ph_value, 6, 2, myChar);
+      pHValue = myChar;
       samplingTime = millis();
     }
+
+    if (!client.connected())
+    {
+      reconnect(3, pHValue);
+    }
+
+    Serial.println(pHValue);
+    client.publish(MQTT_PUB_ph, pHValue);
     vTaskDelay(pdMS_TO_TICKS(3000)); // wait for 1 second before reading again
   }
 }
@@ -204,9 +240,17 @@ void mh_z14a_New_Task(void *Parameters)
     {
     }
     co2_Input_Contraction = int(ppm);
+    String my_str = String(co2_Input_Contraction);
+    const char *my_const_char_value = my_str.c_str();
+
+    if (!client.connected())
+    {
+      reconnect(1, my_const_char_value);
+    }
+    client.publish(MQTT_PUB_CO2input, my_const_char_value);
+
     vTaskDelay(pdMS_TO_TICKS(3000)); // wait for 1 second before reading again
   }
-  // vTaskDelete(NULL);
 }
 
 void mh_z14a_Old_task(void *Parameters)
@@ -252,7 +296,7 @@ void prinDataSensor(void)
   Serial.print(co2_Ouput_Contraction);
   Serial.print("\t\t");
   Serial.print("PH : ");
-  Serial.println(pHValue);
+  Serial.println(ph_value);
 }
 
 void keepWiFiAlive(void *parameter)
@@ -287,26 +331,6 @@ void keepWiFiAlive(void *parameter)
     Serial.println(WiFi.localIP());
   }
 }
-
-// void mqttPublish(void *Parameters)
-// {
-
-//   while (true)
-//   {
-//     if (!client.connected())
-//     {
-//       reconnect();
-//       Serial.println("reconnecting");
-//     }
-//     client.loop();
-
-//     snprintf(msg, MSG_BUFFER_SIZE, "co2 New #%ld", (const char *)co2_Input_Contraction);
-//     Serial.print("Publish message: ");
-//     Serial.println(msg);
-//     client.publish("codersid/nodemcu/v1", msg);
-//   }
-//   vTaskDelay(pdMS_TO_TICKS(3000));
-// }
 
 void setup()
 {
@@ -360,34 +384,11 @@ void setup()
       NULL,                     // Task handle
       1);
 
-  // xTaskCreatePinnedToCore(
-  //     mqttPublish,
-  //     "mqttPublish", // Task name
-  //     5000,          // Stack size (bytes)
-  //     NULL,          // Parameter
-  //     1,             // Task priority
-  //     NULL,          // Task handle
-  //     0);
-
-  // Connect to the MQTT broker
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
 }
 void loop()
 {
-  if (!client.connected())
-  {
-    reconnect();
-  }
-  client.loop();
 
-  unsigned long now = millis();
-  if (now - lastMsg > 2000)
-  {
-    lastMsg = now;
-    snprintf(msg, MSG_BUFFER_SIZE, "co2 New #%ld", (const char *)co2_Input_Contraction);
-    Serial.print("Publish message: ");
-    Serial.println(msg);
-    client.publish("codersid/nodemcu/v1", msg);
-  }
+  client.loop();
 }
