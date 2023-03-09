@@ -4,11 +4,10 @@
 #include <DallasTemperature.h>
 #include <PubSubClient.h>
 #include <Wire.h>
-#include <AsyncTCP.h>
-#include <ESPAsyncWebServer.h>
-#include <AsyncElegantOTA.h>
+#include <Adafruit_SHT31.h>
 
-AsyncWebServer server(80);
+Adafruit_SHT31 sht31 = Adafruit_SHT31();
+
 #define MQTT_PORT 1883
 const char *mqtt_server = "test.mosquitto.org";
 
@@ -49,7 +48,31 @@ const char *password = "Kempul4321!";
 int co2_Input_Contraction;
 int co2_Ouput_Contraction;
 float ph_value;
-float wather_Temp;
+float wather_Temp, air_temp, air_humidity;
+
+void sensor_sht3x_task(void *Parameters)
+{
+  char char_air_temp[10];
+  const char *air_temp_Value;
+  char char_air_humidity[10];
+  const char *air_humidity_Value;
+
+  air_temp = sht31.readTemperature();
+  dtostrf(air_temp, 6, 2, char_air_temp);
+  air_temp_Value = char_air_temp;
+
+  air_humidity = sht31.readHumidity();
+  dtostrf(air_humidity, 6, 2, char_air_humidity);
+  air_humidity_Value = char_air_humidity;
+
+  if (!client.connected())
+  {
+    reconnect(5, air_temp_Value);
+    reconnect(6, air_humidity_Value);
+  }
+  client.publish(MQTT_PUB_AirTemp, air_temp_Value);
+  client.publish(MQTT_PUB_rh, air_temp_Value);
+}
 
 void callback(char *topic, byte *payload, unsigned int length)
 {
@@ -155,8 +178,6 @@ void sensor_ph_task(void *Parameter)
     {
       reconnect(3, pHValue);
     }
-
-    Serial.println(pHValue);
     client.publish(MQTT_PUB_ph, pHValue);
     vTaskDelay(pdMS_TO_TICKS(3000)); // wait for 1 second before reading again
   }
@@ -341,6 +362,13 @@ void setup()
   Serial.println("-----------------DATABIOTA PROJECT---------------------");
   // vTaskDelay(180000);
 
+  if (!sht31.begin(0x44))
+  {
+    Serial.println("Couldn't find SHT31");
+    while (1)
+      delay(1);
+  }
+
   Serial.println(WiFi.localIP());
   xTaskCreatePinnedToCore(
       keepWiFiAlive,
@@ -389,16 +417,8 @@ void setup()
 
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
-
-  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
-            { request->send(200, "text/plain", "Hi! This is a sample response."); });
-
-  AsyncElegantOTA.begin(&server); // Start AsyncElegantOTA
-  server.begin();
-  Serial.println("HTTP server started");
 }
-void loop(void)
+void loop()
 {
   client.loop();
-  AsyncElegantOTA.loop();
 }
