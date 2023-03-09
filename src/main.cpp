@@ -4,8 +4,11 @@
 #include <DallasTemperature.h>
 #include <PubSubClient.h>
 #include <Wire.h>
-#include <string>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+#include <AsyncElegantOTA.h>
 
+AsyncWebServer server(80);
 #define MQTT_PORT 1883
 const char *mqtt_server = "test.mosquitto.org";
 
@@ -386,9 +389,16 @@ void setup()
 
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
-}
-void loop()
-{
 
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
+            { request->send(200, "text/plain", "Hi! This is a sample response."); });
+
+  AsyncElegantOTA.begin(&server); // Start AsyncElegantOTA
+  server.begin();
+  Serial.println("HTTP server started");
+}
+void loop(void)
+{
   client.loop();
+  AsyncElegantOTA.loop();
 }
