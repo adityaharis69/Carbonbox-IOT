@@ -73,7 +73,7 @@ float readTbd()
   else
   {
     turbidity_ntu = -1120.4 * square(volt) + 5742.3 * volt - 4353.8;
-    Serial.println(turbidity_ntu);
+    //    Serial.println(turbidity_ntu);
     if (turbidity_ntu < 0)
     {
       turbidity_ntu = 0.0;
@@ -97,7 +97,7 @@ void sensor_turbidity_task(void *Parameters)
 
   while (true)
   {
-    Serial.println(readTbd());
+    //    Serial.println(readTbd());
     dtostrf(readTbd(), 6, 2, myChar);
     turbidity_value = myChar;
     if (!client.connected())
@@ -491,7 +491,7 @@ void setup()
   xTaskCreatePinnedToCore(
       sensor_ph_task,
       "sensor_ph_task", // Task name
-      3000,             // Stack size (bytes)
+      3048,             // Stack size (bytes)
       NULL,             // Parameter
       1,                // Task priority
       NULL,             // Task handle
@@ -500,7 +500,7 @@ void setup()
   xTaskCreatePinnedToCore(
       sensor_watherTemp_task,
       "sensor_watherTemp_task", // Task name
-      3000,                     // Stack size (bytes)
+      3048,                     // Stack size (bytes)
       NULL,                     // Parameter
       1,                        // Task priority
       NULL,                     // Task handle
@@ -509,20 +509,20 @@ void setup()
   xTaskCreatePinnedToCore(
       sensor_sht3x_task,
       "sensor_sht3x_task", // Task name
-      6000,                // Stack size (bytes)
+      4000,                // Stack size (bytes)
       NULL,                // Parameter
       1,                   // Task priority
       NULL,                // Task handle
       1);
 
-  // xTaskCreatePinnedToCore(
-  //     sensor_turbidity_task,
-  //     "sensor_turbidity_task", // Task name
-  //     2048,                    // Stack size (bytes)
-  //     NULL,                    // Parameter
-  //     1,                       // Task priority
-  //     NULL,                    // Task handle
-  //     1);
+  xTaskCreatePinnedToCore(
+      sensor_turbidity_task,
+      "sensor_turbidity_task", // Task name
+      3048,                    // Stack size (bytes)
+      NULL,                    // Parameter
+      1,                       // Task priority
+      NULL,                    // Task handle
+      1);
 
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
