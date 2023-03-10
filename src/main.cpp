@@ -5,10 +5,10 @@
 #include <PubSubClient.h>
 #include <Wire.h>
 #include <Adafruit_SHT31.h>
+#include <mat.h>
 
 Adafruit_SHT31 sht31 = Adafruit_SHT31();
 
-#define MQTT_PORT 1883
 const char *mqtt_server = "test.mosquitto.org";
 
 WiFiClient espClient;
@@ -31,6 +31,7 @@ const char *MQTT_PUB_WatherTemp = "esp32/ds18b20/temp";
 #define pwmPin2 GPIO_NUM_32      // co2 Old
 #define phPin GPIO_NUM_34        // ph
 #define watherTemPin GPIO_NUM_19 // pin DS18B20
+#define turbidityPin GPIO_NUM_27 // pin turbidity
 
 OneWire oneWire(watherTemPin);
 DallasTemperature sensors(&oneWire);
@@ -48,7 +49,65 @@ const char *password = "Kempul4321!";
 int co2_Input_Contraction;
 int co2_Ouput_Contraction;
 float ph_value;
-float wather_Temp, air_temp, air_humidity;
+float wather_Temp, air_temp, air_humidity, turbidity_ntu;
+
+void sensor_turbidity_task(void *Parameters)
+{
+  int adc = 0;
+  float volt;
+  int adc5;
+  char myChar[10];
+  const char *turbidity_value;
+
+  while (true)
+  {
+    adc = analogRead(turbidityPin);
+    adc5 = map(adc, 0, 4095, 0, 1023);
+    volt = 0;
+    for (int i = 0; i < 1000; i++)
+    {
+      volt += ((float)adc5 / 1023.0) * 5.0;
+    }
+    volt = (volt / 1000); //-0.159
+    volt = round_to_dp(volt, 2);
+    if (volt < 2.5)
+    {
+      turbidity_ntu = 3000;
+    }
+    else
+    {
+      turbidity_ntu = -1120.4 * square(volt) + 5742.3 * volt - 4353.8;
+      if (turbidity_ntu < 0)
+      {
+        turbidity_ntu = 0.0;
+      }
+      else
+      {
+        turbidity_ntu = turbidity_ntu;
+      }
+    }
+    dtostrf(turbidity_ntu, 6, 2, myChar);
+    turbidity_value = myChar;
+    if (!client.connected())
+    {
+      reconnect(7, turbidity_value);
+    }
+    client.publish(MQTT_PUB_tbd, turbidity_value);
+  }
+}
+
+float round_to_dp(float in_value, int decimal_place)
+{
+  float multiplier = powf(10.0f, decimal_place);
+  in_value = roundf(in_value * multiplier) / multiplier;
+  return in_value;
+}
+
+float square(float f)
+{
+  (abs(f) < 256.0);
+  return f * f; // check if overflow will occur because 256*256 does not fit in an int anymore
+}
 
 void sensor_sht3x_task(void *Parameters)
 {
@@ -132,7 +191,6 @@ void reconnect(int number, const char *valueSensor)
       Serial.print("failed, rc=");
       Serial.print(client.state());
       Serial.println(" try again in 5 seconds");
-      // Wait 5 seconds before retrying
       delay(5000);
     }
   }
