@@ -5,7 +5,7 @@
 #include <PubSubClient.h>
 #include <Wire.h>
 #include <Adafruit_SHT31.h>
-#include <mat.h>
+#include <math.h>
 
 Adafruit_SHT31 sht31 = Adafruit_SHT31();
 
@@ -19,7 +19,7 @@ unsigned long lastMsg = 0;
 char msg[MSG_BUFFER_SIZE];
 int value = 0;
 
-const char *MQTT_PUB_CO2input = "esp32/mh-z14a/inpit";
+const char *MQTT_PUB_CO2input = "esp32/mh-z14a/input";
 const char *MQTT_PUB_CO2output = "esp32/mh-z14a/output";
 const char *MQTT_PUB_ph = "esp32/dfRobot/ph";
 const char *MQTT_PUB_tbd = "esp32/dfRobot/tbd";
@@ -51,48 +51,61 @@ int co2_Ouput_Contraction;
 float ph_value;
 float wather_Temp, air_temp, air_humidity, turbidity_ntu;
 
+int adc = 0;
+float volt;
+
+float readTbd()
+{
+  int adc5;
+  adc = analogRead(turbidityPin);
+  adc5 = map(adc, 0, 4095, 0, 1023);
+  volt = 0;
+  for (int i = 0; i < 1000; i++)
+  {
+    volt += ((float)adc5 / 1023.0) * 5.0;
+  }
+  volt = (volt / 1000); //-0.159
+  volt = round_to_dp(volt, 2);
+  if (volt < 2.5)
+  {
+    turbidity_ntu = 3000;
+  }
+  else
+  {
+    turbidity_ntu = -1120.4 * square(volt) + 5742.3 * volt - 4353.8;
+    Serial.println(turbidity_ntu);
+    if (turbidity_ntu < 0)
+    {
+      turbidity_ntu = 0.0;
+      return turbidity_ntu;
+    }
+    else
+    {
+      turbidity_ntu = turbidity_ntu;
+      return turbidity_ntu;
+    }
+  }
+
+  delay(1000);
+}
+
 void sensor_turbidity_task(void *Parameters)
 {
-  int adc = 0;
-  float volt;
-  int adc5;
+
   char myChar[10];
   const char *turbidity_value;
 
   while (true)
   {
-    adc = analogRead(turbidityPin);
-    adc5 = map(adc, 0, 4095, 0, 1023);
-    volt = 0;
-    for (int i = 0; i < 1000; i++)
-    {
-      volt += ((float)adc5 / 1023.0) * 5.0;
-    }
-    volt = (volt / 1000); //-0.159
-    volt = round_to_dp(volt, 2);
-    if (volt < 2.5)
-    {
-      turbidity_ntu = 3000;
-    }
-    else
-    {
-      turbidity_ntu = -1120.4 * square(volt) + 5742.3 * volt - 4353.8;
-      if (turbidity_ntu < 0)
-      {
-        turbidity_ntu = 0.0;
-      }
-      else
-      {
-        turbidity_ntu = turbidity_ntu;
-      }
-    }
-    dtostrf(turbidity_ntu, 6, 2, myChar);
+    Serial.println(readTbd());
+    dtostrf(readTbd(), 6, 2, myChar);
     turbidity_value = myChar;
     if (!client.connected())
     {
       reconnect(7, turbidity_value);
     }
     client.publish(MQTT_PUB_tbd, turbidity_value);
+    vTaskDelay(pdMS_TO_TICKS(3000));
   }
 }
 
@@ -111,26 +124,30 @@ float square(float f)
 
 void sensor_sht3x_task(void *Parameters)
 {
+
   char char_air_temp[10];
   const char *air_temp_Value;
   char char_air_humidity[10];
   const char *air_humidity_Value;
-
-  air_temp = sht31.readTemperature();
-  dtostrf(air_temp, 6, 2, char_air_temp);
-  air_temp_Value = char_air_temp;
-
-  air_humidity = sht31.readHumidity();
-  dtostrf(air_humidity, 6, 2, char_air_humidity);
-  air_humidity_Value = char_air_humidity;
-
-  if (!client.connected())
+  while (true)
   {
-    reconnect(5, air_temp_Value);
-    reconnect(6, air_humidity_Value);
+    air_temp = sht31.readTemperature();
+    dtostrf(air_temp, 6, 2, char_air_temp);
+    air_temp_Value = char_air_temp;
+
+    air_humidity = sht31.readHumidity();
+    dtostrf(air_humidity, 6, 2, char_air_humidity);
+    air_humidity_Value = char_air_humidity;
+
+    if (!client.connected())
+    {
+      reconnect(5, air_temp_Value);
+      reconnect(6, air_humidity_Value);
+    }
+    client.publish(MQTT_PUB_AirTemp, air_temp_Value);
+    client.publish(MQTT_PUB_rh, air_humidity_Value);
+    vTaskDelay(pdMS_TO_TICKS(3000));
   }
-  client.publish(MQTT_PUB_AirTemp, air_temp_Value);
-  client.publish(MQTT_PUB_rh, air_temp_Value);
 }
 
 void callback(char *topic, byte *payload, unsigned int length)
@@ -369,9 +386,16 @@ void mh_z14a_Old_task(void *Parameters)
     {
     }
     co2_Ouput_Contraction = int(ppm);
+    String my_str = String(co2_Ouput_Contraction);
+    const char *my_const_char_value = my_str.c_str();
+
+    if (!client.connected())
+    {
+      reconnect(2, my_const_char_value);
+    }
+    client.publish(MQTT_PUB_CO2output, my_const_char_value);
     vTaskDelay(pdMS_TO_TICKS(3000)); // wait for 1 second before reading again
   }
-  // vTaskDelete(NULL);
 }
 
 void prinDataSensor(void)
@@ -449,7 +473,7 @@ void setup()
   xTaskCreatePinnedToCore(
       mh_z14a_New_Task,
       "mh_z14a_New_Task", // Task name
-      5122,               // Stack size (bytes)
+      6000,               // Stack size (bytes)
       NULL,               // Parameter
       1,                  // Task priority
       NULL,               // Task handle
@@ -458,16 +482,16 @@ void setup()
   xTaskCreatePinnedToCore(
       mh_z14a_Old_task,
       "mh_z14a_Old_task", // Task name
-      5122,               // Stack size (bytes)
+      6000,               // Stack size (bytes)
       NULL,               // Parameter
       1,                  // Task priority
       NULL,               // Task handle
-      1);
+      0);
 
   xTaskCreatePinnedToCore(
       sensor_ph_task,
       "sensor_ph_task", // Task name
-      2048,             // Stack size (bytes)
+      3000,             // Stack size (bytes)
       NULL,             // Parameter
       1,                // Task priority
       NULL,             // Task handle
@@ -476,11 +500,29 @@ void setup()
   xTaskCreatePinnedToCore(
       sensor_watherTemp_task,
       "sensor_watherTemp_task", // Task name
-      2048,                     // Stack size (bytes)
+      3000,                     // Stack size (bytes)
       NULL,                     // Parameter
       1,                        // Task priority
       NULL,                     // Task handle
+      0);
+  //
+  xTaskCreatePinnedToCore(
+      sensor_sht3x_task,
+      "sensor_sht3x_task", // Task name
+      6000,                // Stack size (bytes)
+      NULL,                // Parameter
+      1,                   // Task priority
+      NULL,                // Task handle
       1);
+
+  // xTaskCreatePinnedToCore(
+  //     sensor_turbidity_task,
+  //     "sensor_turbidity_task", // Task name
+  //     2048,                    // Stack size (bytes)
+  //     NULL,                    // Parameter
+  //     1,                       // Task priority
+  //     NULL,                    // Task handle
+  //     1);
 
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
