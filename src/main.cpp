@@ -141,11 +141,20 @@ void reconnect(int number, const char *valueSensor)
 void sensor_watherTemp_task(void *Parameters)
 {
   sensors.begin();
+  char myChar[10];
+  const char *water_tem_value;
 
   while (true)
   {
     sensors.requestTemperatures();
     wather_Temp = sensors.getTempCByIndex(0);
+    dtostrf(wather_Temp, 6, 2, myChar);
+    water_tem_value = myChar;
+    if (!client.connected())
+    {
+      reconnect(4, water_tem_value);
+    }
+    client.publish(MQTT_PUB_WatherTemp, water_tem_value);
     vTaskDelay(pdMS_TO_TICKS(3000));
   }
 }
