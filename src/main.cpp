@@ -243,7 +243,6 @@ void sensor_ph_task(void *Parameter)
   const char *pHValue;
   static unsigned long samplingTime = millis();
   static unsigned long printTime = millis();
-
   while (true)
   {
     if (millis() - samplingTime > samplingInterval)
@@ -363,7 +362,6 @@ void mh_z14a_New_Task(void *Parameters)
 
 void mh_z14a_Old_task(void *Parameters)
 {
-
   pinMode(pwmPin2, INPUT_PULLDOWN);
   while (true)
   {
@@ -386,14 +384,6 @@ void mh_z14a_Old_task(void *Parameters)
     {
     }
     co2_Ouput_Contraction = int(ppm);
-    String my_str = String(co2_Ouput_Contraction);
-    const char *my_const_char_value = my_str.c_str();
-
-    if (!client.connected())
-    {
-      reconnect(2, my_const_char_value);
-    }
-    client.publish(MQTT_PUB_CO2output, my_const_char_value);
     vTaskDelay(pdMS_TO_TICKS(3000)); // wait for 1 second before reading again
   }
 }
@@ -491,29 +481,29 @@ void setup()
   xTaskCreatePinnedToCore(
       sensor_ph_task,
       "sensor_ph_task", // Task name
-      3048,             // Stack size (bytes)
+      2048,             // Stack size (bytes)
       NULL,             // Parameter
       1,                // Task priority
-      NULL,             // Task handle
+      NULL,             // Task handl
       1);
 
-  xTaskCreatePinnedToCore(
-      sensor_watherTemp_task,
-      "sensor_watherTemp_task", // Task name
-      3048,                     // Stack size (bytes)
-      NULL,                     // Parameter
-      1,                        // Task priority
-      NULL,                     // Task handle
+  // xTaskCreatePinnedToCore(
+  //     sensor_watherTemp_task,
+  //     "sensor_watherTemp_task", // Task name
+  //     3048,                     // Stack size (bytes)
+  //     NULL,                     // Parameter
+  //     1,                        // Task priority
+  //     NULL,                     // Task handle
       0);
-  //
-  xTaskCreatePinnedToCore(
-      sensor_sht3x_task,
-      "sensor_sht3x_task", // Task name
-      4000,                // Stack size (bytes)
-      NULL,                // Parameter
-      1,                   // Task priority
-      NULL,                // Task handle
-      1);
+      //
+      xTaskCreatePinnedToCore(
+          sensor_sht3x_task,
+          "sensor_sht3x_task", // Task name
+          4000,                // Stack size (bytes)
+          NULL,                // Parameter
+          1,                   // Task priority
+          NULL,                // Task handle
+          1);
 
   xTaskCreatePinnedToCore(
       sensor_turbidity_task,
@@ -521,8 +511,8 @@ void setup()
       3048,                    // Stack size (bytes)
       NULL,                    // Parameter
       1,                       // Task priority
-      NULL,                    // Task handle
-      1);
+      NULL,                    // Task handl
+  //     1);
 
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
