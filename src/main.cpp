@@ -97,7 +97,6 @@ void sensor_turbidity_task(void *Parameters)
 
   while (true)
   {
-    //    Serial.println(readTbd());
     dtostrf(readTbd(), 6, 2, myChar);
     turbidity_value = myChar;
     if (!client.connected())
@@ -488,41 +487,41 @@ void setup()
       NULL,               // Task handle
       0);
 
-  xTaskCreatePinnedToCore(
-      sensor_ph_task,
-      "sensor_ph_task", // Task name
-      3048,             // Stack size (bytes)
-      NULL,             // Parameter
-      1,                // Task priority
-      NULL,             // Task handle
-      1);
+  // xTaskCreatePinnedToCore(
+  //     sensor_ph_task,
+  //     "sensor_ph_task", // Task name
+  //     3048,             // Stack size (bytes)
+  //     NULL,             // Parameter
+  //     1,                // Task priority
+  //     NULL,             // Task handle
+  //     1);
 
-  xTaskCreatePinnedToCore(
-      sensor_watherTemp_task,
-      "sensor_watherTemp_task", // Task name
-      3048,                     // Stack size (bytes)
-      NULL,                     // Parameter
-      1,                        // Task priority
-      NULL,                     // Task handle
-      0);
-  //
-  xTaskCreatePinnedToCore(
-      sensor_sht3x_task,
-      "sensor_sht3x_task", // Task name
-      4000,                // Stack size (bytes)
-      NULL,                // Parameter
-      1,                   // Task priority
-      NULL,                // Task handle
-      1);
+  // xTaskCreatePinnedToCore(
+  //     sensor_watherTemp_task,
+  //     "sensor_watherTemp_task", // Task name
+  //     3048,                     // Stack size (bytes)
+  //     NULL,                     // Parameter
+  //     1,                        // Task priority
+  //     NULL,                     // Task handle
+  //     0);
+  // //
+  // xTaskCreatePinnedToCore(
+  //     sensor_sht3x_task,
+  //     "sensor_sht3x_task", // Task name
+  //     4000,                // Stack size (bytes)
+  //     NULL,                // Parameter
+  //     1,                   // Task priority
+  //     NULL,                // Task handle
+  //     1);
 
-  xTaskCreatePinnedToCore(
-      sensor_turbidity_task,
-      "sensor_turbidity_task", // Task name
-      3048,                    // Stack size (bytes)
-      NULL,                    // Parameter
-      1,                       // Task priority
-      NULL,                    // Task handle
-      1);
+  // xTaskCreatePinnedToCore(
+  //     sensor_turbidity_task,
+  //     "sensor_turbidity_task", // Task name
+  //     3048,                    // Stack size (bytes)
+  //     NULL,                    // Parameter
+  //     1,                       // Task priority
+  //     NULL,                    // Task handle
+  //     1);
 
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
