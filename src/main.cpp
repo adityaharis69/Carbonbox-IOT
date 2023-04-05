@@ -7,8 +7,6 @@
 #include <Adafruit_SHT31.h>
 #include <math.h>
 
-Adafruit_SHT31 sht31 = Adafruit_SHT31();
-
 const char *mqtt_server = "test.mosquitto.org";
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -33,13 +31,13 @@ struct toppic
   const char *MQTT_PUB_WatherTemp = "esp32/ds18b20/temp";
 };
 
-#define co2InputPin GPIO_NUM_33  // co2 input
-#define co2OutputPin GPIO_NUM_32 // co2 output
-#define phPin GPIO_NUM_34        // ph
-#define watherTemPin GPIO_NUM_19 // pin DS18B20
-#define turbidityPin GPIO_NUM_35 // pin turbidity
-#define waterLevelPin GPIO_NUM_4 // pin Water level
-#define relayPompaPin GPIO_NUM_12
+#define co2InputPin GPIO_NUM_33   // co2 input
+#define co2OutputPin GPIO_NUM_32  // co2 output
+#define phPin GPIO_NUM_34         // ph
+#define watherTemPin GPIO_NUM_19  // pin DS18B20
+#define turbidityPin GPIO_NUM_35  // pin turbidity
+#define waterLevelPin GPIO_NUM_4  // pin Water level
+#define relayPompaPin GPIO_NUM_12 // pinPompa
 
 OneWire oneWire(watherTemPin);
 DallasTemperature sensors(&oneWire);
@@ -139,11 +137,15 @@ float volt;
 
 void sensor_sht3x_task(void *Parameters)
 {
-
+  Adafruit_SHT31 sht31 = Adafruit_SHT31();
+  dataSensor dataSensor;
   while (true)
   {
-    air_temp = sht31.readTemperature();
-    air_humidity = sht31.readHumidity();
+    dataSensor.air_Temperature_C = sht31.readTemperature();
+    dataSensor.air_Humidity_C = sht31.readHumidity();
+
+    xQueueSend(xQueue3, &dataSensor.air_temp, portMAX_DELAY);
+    xQueueSend(xQueue3, &dataSensor.air_humidity, portMAX_DELAY);
 
     vTaskDelay(pdMS_TO_TICKS(3000));
   }
@@ -390,6 +392,14 @@ void recive(void *pvParameters)
   while (1)
   {
     // Receive the data from the queue
+    // xQueueReceive(xQueue3, &recieveData.air_Humidity_C, portMAX_DELAY);
+    // Serial.print("air Humi : ");
+    // Serial.print(recieveData.air_Humidity_C);
+    // Serial.print("\t\t");
+    // xQueueReceive(xQueue3, &recieveData.air_Temperature_C, portMAX_DELAY);
+    // Serial.print("air tem : ");
+    // Serial.print(recieveData.air_Temperature_C);
+    Serial.print("\t\t");
     xQueueReceive(xQueue1, &recieveData.co2_Input_Contraction, portMAX_DELAY);
     Serial.print("co2 input : ");
     Serial.print(recieveData.co2_Input_Contraction);
@@ -474,7 +484,7 @@ void setup()
       NULL,     // Parameter
       1,        // Task priority
       NULL,     // Task handle
-      0);
+      1);
 
   xTaskCreatePinnedToCore(
       mh_z14a_Input_Task,
@@ -512,14 +522,14 @@ void setup()
   //     NULL,                     // Task handle
   //     0);
 
-  // xTaskCreatePinnedToCore(
-  //     sensor_sht3x_task,
-  //     "sensor_sht3x_task", // Task name
-  //     4000,                // Stack size (bytes)
-  //     NULL,                // Parameter
-  //     1,                   // Task priority
-  //     NULL,                // Task handle
-  //     1);
+  xTaskCreatePinnedToCore(
+      sensor_sht3x_task,
+      "sensor_sht3x_task", // Task name
+      1000,                // Stack size (bytes)
+      NULL,                // Parameter
+      1,                   // Task priority
+      NULL,                // Task handle
+      1);
 
   // xTaskCreatePinnedToCore(
   //     sensor_turbidity_task,
