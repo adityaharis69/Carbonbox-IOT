@@ -19,6 +19,7 @@ int value = 0;
 QueueHandle_t xQueue1;
 QueueHandle_t xQueue2;
 QueueHandle_t xQueue3;
+
 struct toppic
 {
   /* data */
@@ -51,6 +52,12 @@ const char *password = "Kempul4321!";
 #define Offset 0.00 // deviation compensate
 #define samplingInterval 20
 #define ArrayLenth 40 // times of collection
+
+static TaskHandle_t taskWifi;
+static TaskHandle_t taskco2In;
+static TaskHandle_t taskco2Out;
+static TaskHandle_t tasksht13;
+static TaskHandle_t taskrecieve;
 
 struct dataSensor
 {
@@ -139,13 +146,19 @@ void sensor_sht3x_task(void *Parameters)
 {
   Adafruit_SHT31 sht31 = Adafruit_SHT31();
   dataSensor dataSensor;
+  if (!sht31.begin(0x44))
+  {
+    Serial.println("Check circuit. SHT31 not found!");
+    while (1)
+      delay(1);
+  }
   while (true)
   {
     dataSensor.air_Temperature_C = sht31.readTemperature();
     dataSensor.air_Humidity_C = sht31.readHumidity();
 
-    xQueueSend(xQueue3, &dataSensor.air_temp, portMAX_DELAY);
-    xQueueSend(xQueue3, &dataSensor.air_humidity, portMAX_DELAY);
+    xQueueSend(xQueue3, &dataSensor.air_Temperature_C, portMAX_DELAY);
+    xQueueSend(xQueue3, &dataSensor.air_Humidity_C, portMAX_DELAY);
 
     vTaskDelay(pdMS_TO_TICKS(3000));
   }
@@ -392,13 +405,13 @@ void recive(void *pvParameters)
   while (1)
   {
     // Receive the data from the queue
-    // xQueueReceive(xQueue3, &recieveData.air_Humidity_C, portMAX_DELAY);
-    // Serial.print("air Humi : ");
-    // Serial.print(recieveData.air_Humidity_C);
-    // Serial.print("\t\t");
-    // xQueueReceive(xQueue3, &recieveData.air_Temperature_C, portMAX_DELAY);
-    // Serial.print("air tem : ");
-    // Serial.print(recieveData.air_Temperature_C);
+    xQueueReceive(xQueue3, &recieveData.air_Humidity_C, portMAX_DELAY);
+    Serial.print("air Humi : ");
+    Serial.print(recieveData.air_Humidity_C);
+    Serial.print("\t\t");
+    xQueueReceive(xQueue3, &recieveData.air_Temperature_C, portMAX_DELAY);
+    Serial.print("air tem : ");
+    Serial.print(recieveData.air_Temperature_C);
     Serial.print("\t\t");
     xQueueReceive(xQueue1, &recieveData.co2_Input_Contraction, portMAX_DELAY);
     Serial.print("co2 input : ");
@@ -407,6 +420,9 @@ void recive(void *pvParameters)
     xQueueReceive(xQueue2, &recieveData.co2_Output_Contraction, portMAX_DELAY);
     Serial.print("co2 Output : ");
     Serial.println(recieveData.co2_Output_Contraction);
+
+    Serial.print("Free heap (bytes): ");
+    Serial.println(xPortGetFreeHeapSize());
   }
 }
 
@@ -463,45 +479,45 @@ void setup()
 {
   Serial.begin(112500);
   Serial.println("-----------------DATABIOTA PROJECT---------------------");
-  // Serial.println(WiFi.localIP());
 
   xQueue1 = xQueueCreate(10, sizeof(int));
   xQueue2 = xQueueCreate(10, sizeof(int));
+  xQueue3 = xQueueCreate(10, sizeof(int));
 
   xTaskCreatePinnedToCore(
       keepWiFiAlive,
       "keepWiFiAlive", // Task name
-      5000,            // Stack size (bytes)
+      3000,            // Stack size (bytes)
       NULL,            // Parameter
       1,               // Task priority
-      NULL,            // Task handle
+      &taskWifi,       // Task handle
       0);
 
   xTaskCreatePinnedToCore(
       recive,
-      "recive", // Task name
-      1000,     // Stack size (bytes)
-      NULL,     // Parameter
-      1,        // Task priority
-      NULL,     // Task handle
+      "recive",     // Task name
+      3000,         // Stack size (bytes)
+      NULL,         // Parameter
+      2,            // Task priority
+      &taskrecieve, // Task handle
       1);
 
   xTaskCreatePinnedToCore(
       mh_z14a_Input_Task,
       "mh_z14a_Input_Task", // Task name
-      1000,                 // Stack size (bytes)
+      2000,                 // Stack size (bytes)
       NULL,                 // Parameter
       1,                    // Task priority
-      NULL,                 // Task handle
+      &taskco2In,           // Task handle
       1);
 
   xTaskCreatePinnedToCore(
       mh_z14a_Output_task,
       "mh_z14a_Output_task", // Task name
-      1000,                  // Stack size (bytes)
+      2000,                  // Stack size (bytes)
       NULL,                  // Parameter
       1,                     // Task priority
-      NULL,                  // Task handle
+      &taskco2Out,           // Task handle
       0);
 
   // xTaskCreatePinnedToCore(
@@ -525,10 +541,10 @@ void setup()
   xTaskCreatePinnedToCore(
       sensor_sht3x_task,
       "sensor_sht3x_task", // Task name
-      1000,                // Stack size (bytes)
+      2000,                // Stack size (bytes)
       NULL,                // Parameter
-      1,                   // Task priority
-      NULL,                // Task handle
+      2,                   // Task priority
+      &tasksht13,          // Task handle
       1);
 
   // xTaskCreatePinnedToCore(
@@ -542,6 +558,7 @@ void setup()
 
   // client.setServer(mqtt_server, 1883);
   // client.setCallback(callback);
+  vTaskDelete(NULL);
 }
 void loop()
 {
