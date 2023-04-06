@@ -19,7 +19,7 @@ int value = 0;
 QueueHandle_t xQueue1;
 QueueHandle_t xQueue2;
 QueueHandle_t xQueue3;
-
+QueueHandle_t xQueue4;
 struct toppic
 {
   /* data */
@@ -40,9 +40,6 @@ struct toppic
 #define waterLevelPin GPIO_NUM_4  // pin Water level
 #define relayPompaPin GPIO_NUM_12 // pinPompa
 
-OneWire oneWire(watherTemPin);
-DallasTemperature sensors(&oneWire);
-
 const char *ssid = "Neurabot";
 const char *password = "Kempul4321!";
 
@@ -60,16 +57,18 @@ static TaskHandle_t tasksht13;
 static TaskStatus_t tasktbd;
 static TaskHandle_t taskDals11;
 static TaskHandle_t taskph;
-
 static TaskHandle_t taskrecieve;
 
 struct dataSensor
 {
   /* data */
-  int co2_Input_Contraction;
-  int co2_Output_Contraction;
+  int co2_Input_C;
+  int co2_Output_C;
   float air_Temperature_C;
   float air_Humidity_C;
+  float ph_C;
+  float wather_Temperature_C;
+  float tbd_C;
 };
 
 float ph_value;
@@ -158,8 +157,8 @@ void sensor_sht3x_task(void *Parameters)
   }
   while (true)
   {
-    dataSensor.air_Temperature_C = sht31.readTemperature();
     dataSensor.air_Humidity_C = sht31.readHumidity();
+    dataSensor.air_Temperature_C = sht31.readTemperature();
 
     xQueueSend(xQueue3, &dataSensor.air_Temperature_C, portMAX_DELAY);
     xQueueSend(xQueue3, &dataSensor.air_Humidity_C, portMAX_DELAY);
@@ -231,26 +230,21 @@ void sensor_sht3x_task(void *Parameters)
 //   }
 // }
 
-// void sensor_watherTemp_task(void *Parameters)
-// {
-//   sensors.begin();
-//   char myChar[10];
-//   const char *water_tem_value;
+void sensor_watherTemp_task(void *Parameters)
+{
+  dataSensor dataSensor;
+  OneWire oneWire(watherTemPin);
+  DallasTemperature sensors(&oneWire);
+  sensors.begin();
 
-//   while (true)
-//   {
-//     sensors.requestTemperatures();
-//     wather_Temp = sensors.getTempCByIndex(0);
-//     dtostrf(wather_Temp, 6, 2, myChar);
-//     water_tem_value = myChar;
-//     if (!client.connected())
-//     {
-//       reconnect(4, water_tem_value);
-//     }
-//     client.publish(MQTT_PUB_WatherTemp, water_tem_value);
-//     vTaskDelay(pdMS_TO_TICKS(3000));
-//   }
-// }
+  while (true)
+  {
+    sensors.requestTemperatures();
+    dataSensor.wather_Temperature_C = sensors.getTempCByIndex(0);
+    xQueueSend(xQueue4, &dataSensor.wather_Temperature_C, portMAX_DELAY);
+    vTaskDelay(pdMS_TO_TICKS(3000));
+  }
+}
 
 // void sensor_ph_task(void *Parameter)
 // {
@@ -346,7 +340,7 @@ void mh_z14a_Input_Task(void *Parameters)
 
   pinMode(co2InputPin, INPUT_PULLDOWN);
   dataSensor dataSensor;
-  // int co2_Input_Contraction;
+  // int co2_Input_C;
   while (true)
   {
     while (digitalRead(co2InputPin) == LOW)
@@ -367,8 +361,8 @@ void mh_z14a_Input_Task(void *Parameters)
     while (digitalRead(co2InputPin) == HIGH)
     {
     }
-    dataSensor.co2_Input_Contraction = int(ppm);
-    xQueueSend(xQueue1, &dataSensor.co2_Input_Contraction, portMAX_DELAY);
+    dataSensor.co2_Input_C = int(ppm);
+    xQueueSend(xQueue1, &dataSensor.co2_Input_C, portMAX_DELAY);
     vTaskDelay(pdMS_TO_TICKS(3000)); // wait for 1 second before reading again
   }
 }
@@ -397,8 +391,8 @@ void mh_z14a_Output_task(void *Parameters)
     while (digitalRead(co2OutputPin) == HIGH)
     {
     }
-    dataSensor.co2_Output_Contraction = int(ppm);
-    xQueueSend(xQueue2, &dataSensor.co2_Output_Contraction, portMAX_DELAY);
+    dataSensor.co2_Output_C = int(ppm);
+    xQueueSend(xQueue2, &dataSensor.co2_Output_C, portMAX_DELAY);
     vTaskDelay(pdMS_TO_TICKS(3000)); // wait for 1 second before reading again
   }
 }
@@ -406,24 +400,28 @@ void mh_z14a_Output_task(void *Parameters)
 void recive(void *pvParameters)
 {
   dataSensor recieveData;
-  while (1)
+  while (true)
   {
     // Receive the data from the queue
+    xQueueReceive(xQueue4, &recieveData.wather_Temperature_C, portMAX_DELAY);
+    Serial.print("wather tem : ");
+    Serial.print(recieveData.wather_Temperature_C);
+    Serial.print("\t");
     xQueueReceive(xQueue3, &recieveData.air_Humidity_C, portMAX_DELAY);
     Serial.print("air Humi : ");
     Serial.print(recieveData.air_Humidity_C);
-    Serial.print("\t\t");
+    Serial.print("\t");
     xQueueReceive(xQueue3, &recieveData.air_Temperature_C, portMAX_DELAY);
     Serial.print("air tem : ");
     Serial.print(recieveData.air_Temperature_C);
-    Serial.print("\t\t");
-    xQueueReceive(xQueue1, &recieveData.co2_Input_Contraction, portMAX_DELAY);
+    Serial.print("\t");
+    xQueueReceive(xQueue1, &recieveData.co2_Input_C, portMAX_DELAY);
     Serial.print("co2 input : ");
-    Serial.print(recieveData.co2_Input_Contraction);
-    Serial.print("\t\t");
-    xQueueReceive(xQueue2, &recieveData.co2_Output_Contraction, portMAX_DELAY);
+    Serial.print(recieveData.co2_Input_C);
+    Serial.print("\t");
+    xQueueReceive(xQueue2, &recieveData.co2_Output_C, portMAX_DELAY);
     Serial.print("co2 Output : ");
-    Serial.println(recieveData.co2_Output_Contraction);
+    Serial.println(recieveData.co2_Output_C);
 
     Serial.print("Free heap (bytes): ");
     Serial.println(xPortGetFreeHeapSize());
@@ -437,10 +435,10 @@ void recive(void *pvParameters)
 //   Serial.print(wather_Temp);
 //   Serial.print("\t\t");
 //   Serial.print("CO2 INPUT: ");
-//   Serial.print(co2_Input_Contraction);
+//   Serial.print(co2_Input_C);
 //   Serial.print("\t\t");
 //   Serial.print("CO2 OUTPUT: ");
-//   Serial.print(co2_Output_Contraction);
+//   Serial.print(co2_Output_C);
 //   Serial.print("\t\t");
 //   Serial.print("PH : ");
 //   Serial.println(ph_value);
@@ -487,6 +485,7 @@ void setup()
   xQueue1 = xQueueCreate(10, sizeof(int));
   xQueue2 = xQueueCreate(10, sizeof(int));
   xQueue3 = xQueueCreate(10, sizeof(int));
+  xQueue4 = xQueueCreate(10, sizeof(int));
 
   xTaskCreatePinnedToCore(
       keepWiFiAlive,
@@ -500,7 +499,7 @@ void setup()
   xTaskCreatePinnedToCore(
       recive,
       "recive",     // Task name
-      3000,         // Stack size (bytes)
+      1500,         // Stack size (bytes)
       NULL,         // Parameter
       2,            // Task priority
       &taskrecieve, // Task handle
@@ -533,19 +532,19 @@ void setup()
   //     NULL,             // Task handl
   //     1);
 
-  // xTaskCreatePinnedToCore(
-  //     sensor_watherTemp_task,
-  //     "sensor_watherTemp_task", // Task name
-  //     3048,                     // Stack size (bytes)
-  //     NULL,                     // Parameter
-  //     1,                        // Task priority
-  //     NULL,                     // Task handle
-  //     0);
+  xTaskCreatePinnedToCore(
+      sensor_watherTemp_task,
+      "sensor_watherTemp_task", // Task name
+      2000,                     // Stack size (bytes)
+      NULL,                     // Parameter
+      2,                        // Task priority
+      &taskDals11,              // Task handle
+      0);
 
   xTaskCreatePinnedToCore(
       sensor_sht3x_task,
       "sensor_sht3x_task", // Task name
-      2000,                // Stack size (bytes)
+      2500,                // Stack size (bytes)
       NULL,                // Parameter
       2,                   // Task priority
       &tasksht13,          // Task handle
