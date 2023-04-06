@@ -57,6 +57,10 @@ static TaskHandle_t taskWifi;
 static TaskHandle_t taskco2In;
 static TaskHandle_t taskco2Out;
 static TaskHandle_t tasksht13;
+static TaskStatus_t tasktbd;
+static TaskHandle_t taskDals11;
+static TaskHandle_t taskph;
+
 static TaskHandle_t taskrecieve;
 
 struct dataSensor
