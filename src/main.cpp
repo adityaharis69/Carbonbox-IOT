@@ -14,6 +14,7 @@ QueueHandle_t xQueue1;
 QueueHandle_t xQueue2;
 QueueHandle_t xQueue3;
 QueueHandle_t xQueue4;
+
 struct toppic
 {
   /* data */
@@ -393,22 +394,7 @@ void mh_z14a_Output_task(void *Parameters)
 
 void recive(void *pvParameters)
 {
-  WiFiClient wifi_client;
-  PubSubClient mqtt_client(wifi_client);
-  mqtt_client.publish(mqtt_server, mqtt_port);
   dataSensor recieveData;
-
-  if (mqtt_client.connect("ESP32Client"))
-  {
-    Serial.println("Connected to MQTT broker");
-  }
-  else
-  {
-    Serial.print("Failed to connect to MQTT broker, rc=");
-    Serial.println(mqtt_client.state());
-    delay(500);
-  }
-
   while (true)
   {
 
