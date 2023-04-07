@@ -8,13 +8,7 @@
 #include <math.h>
 
 const char *mqtt_server = "test.mosquitto.org";
-WiFiClient espClient;
-PubSubClient client(espClient);
-
-unsigned long lastMsg = 0;
-#define MSG_BUFFER_SIZE (50)
-char msg[MSG_BUFFER_SIZE];
-int value = 0;
+const char *mqtt_port = "1883";
 
 QueueHandle_t xQueue1;
 QueueHandle_t xQueue2;
@@ -160,8 +154,8 @@ void sensor_sht3x_task(void *Parameters)
     dataSensor.air_Humidity_C = sht31.readHumidity();
     dataSensor.air_Temperature_C = sht31.readTemperature();
 
-    xQueueSend(xQueue3, &dataSensor.air_Temperature_C, portMAX_DELAY);
     xQueueSend(xQueue3, &dataSensor.air_Humidity_C, portMAX_DELAY);
+    xQueueSend(xQueue3, &dataSensor.air_Temperature_C, portMAX_DELAY);
 
     vTaskDelay(pdMS_TO_TICKS(3000));
   }
@@ -399,9 +393,25 @@ void mh_z14a_Output_task(void *Parameters)
 
 void recive(void *pvParameters)
 {
+  WiFiClient wifi_client;
+  PubSubClient mqtt_client(wifi_client);
+  mqtt_client.publish(mqtt_server, mqtt_port);
   dataSensor recieveData;
+
+  if (mqtt_client.connect("ESP32Client"))
+  {
+    Serial.println("Connected to MQTT broker");
+  }
+  else
+  {
+    Serial.print("Failed to connect to MQTT broker, rc=");
+    Serial.println(mqtt_client.state());
+    delay(500);
+  }
+
   while (true)
   {
+
     // Receive the data from the queue
     xQueueReceive(xQueue4, &recieveData.wather_Temperature_C, portMAX_DELAY);
     Serial.print("wather tem : ");
