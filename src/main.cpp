@@ -13,23 +13,28 @@ const char *password = "Kempul4321!";
 // mqtt inisislisasi
 const char *mqtt_server = "test.mosquitto.org";
 const char *mqtt_port = "1883";
+const char *mqtt_client_id = "ESP32Client";
+
+WiFiClient wifi_client;
+PubSubClient mqtt_client(wifi_client);
 
 QueueHandle_t xQueue1;
 QueueHandle_t xQueue2;
 QueueHandle_t xQueue3;
 QueueHandle_t xQueue4;
 
-struct toppic
-{
-  /* data */
-  const char *MQTT_PUB_CO2input = "esp32/mh-z14a/input";
-  const char *MQTT_PUB_CO2output = "esp32/mh-z14a/output";
-  const char *MQTT_PUB_ph = "esp32/dfRobot/ph";
-  const char *MQTT_PUB_tbd = "esp32/dfRobot/tbd";
-  const char *MQTT_PUB_AirTemp = "esp32/sht3x/temp";
-  const char *MQTT_PUB_rh = "esp32/sht3x/rh";
-  const char *MQTT_PUB_WatherTemp = "esp32/ds18b20/temp";
-};
+// struct toppic
+// {
+//   const char *MQTT_PUB_CO2input = "esp32/mh-z14a/input";
+//   const char *MQTT_PUB_CO2output = "esp32/mh-z14a/output";
+//   const char *MQTT_PUB_ph = "esp32/dfRobot/ph";
+//   const char *MQTT_PUB_tbd = "esp32/dfRobot/tbd";
+//   const char *MQTT_PUB_AirTemp = "esp32/sht3x/temp";
+//   const char *MQTT_PUB_rh = "esp32/sht3x/rh";
+//   const char *MQTT_PUB_WatherTemp = "esp32/ds18b20/temp";
+// };
+
+const char *myToppic[4] = {"esp32/mh-z14a/input", "esp32/mh-z14a/output", "esp32/sht3x/rh", "esp32/sht3x/temp"};
 
 #define co2InputPin GPIO_NUM_33   // co2 input
 #define co2OutputPin GPIO_NUM_32  // co2 output
@@ -395,10 +400,26 @@ void mh_z14a_Output_task(void *Parameters)
 
 void recive(void *pvParameters)
 {
-
   dataSensor recieveData;
+  // toppic mqttTopic;
+
+  mqtt_client.setServer(mqtt_server, 1883);
+  mqtt_client.connect(mqtt_client_id);
+  mqtt_client.setClient(wifi_client);
+
+  char floatChar[10];
+  const char *floatSensorVAl;
+  String my_str;
+  const char *my_const_char_value;
+
   while (true)
   {
+    while (!mqtt_client.connected())
+    {
+      delay(500);
+      Serial.println("Connecting to MQTT broker...");
+      mqtt_client.connect(mqtt_client_id);
+    }
 
     // Receive the data from the queue
     xQueueReceive(xQueue4, &recieveData.wather_Temperature_C, portMAX_DELAY);
@@ -421,25 +442,67 @@ void recive(void *pvParameters)
     Serial.print("co2 Output : ");
     Serial.println(recieveData.co2_Output_C);
 
+    my_str = String(recieveData.co2_Input_C);
+    my_const_char_value = my_str.c_str();
+
+    if (recieveData.co2_Input_C > 350)
+    {
+      mqtt_client.publish(myToppic[0], my_const_char_value);
+      my_str = "";
+      my_const_char_value = "";
+    }
+    delay(10);
+
+    my_str = String(recieveData.co2_Output_C);
+    my_const_char_value = my_str.c_str();
+    if (recieveData.co2_Output_C > 350)
+    {
+      mqtt_client.publish(myToppic[1], my_const_char_value);
+      my_str = "";
+      my_const_char_value = "";
+    }
+    delay(10);
+    dtostrf(recieveData.air_Humidity_C, 6, 2, floatChar);
+    floatSensorVAl = floatChar;
+    if (recieveData.air_Humidity_C > 0)
+    {
+      mqtt_client.publish(myToppic[3], floatSensorVAl);
+      floatChar = "";
+      floatSensorVAl = "";
+    }
+
+    delay(10);
+
+    dtostrf(recieveData.air_Temperature_C, 6, 2, floatChar);
+    floatSensorVAl = floatChar;
+    if (recieveData.air_Humidity_C > 0)
+    {
+      mqtt_client.publish(myToppic[4], floatSensorVAl);
+      floatChar = "";
+      floatSensorVAl = "";
+    }
+
+    mqtt_client.disconnect();
     Serial.print("Free heap (bytes): ");
     Serial.println(xPortGetFreeHeapSize());
   }
 }
 
-// void prinDataSensor(void)
+// void sendValue(int valueSensor, int topic)
 // {
-//   /* code */
-//   Serial.print("DS18B20 : ");
-//   Serial.print(wather_Temp);
-//   Serial.print("\t\t");
-//   Serial.print("CO2 INPUT: ");
-//   Serial.print(co2_Input_C);
-//   Serial.print("\t\t");
-//   Serial.print("CO2 OUTPUT: ");
-//   Serial.print(co2_Output_C);
-//   Serial.print("\t\t");
-//   Serial.print("PH : ");
-//   Serial.println(ph_value);
+//   String my_str = String(valueSensor);
+//   const char *my_const_char_value = my_str.c_str();
+
+//   if (topic == 1)
+//   {
+//     mqtt_client.publish(myToppic[0], my_const_char_value);
+//     Serial.println("send input");
+//   }
+//   else if (topic == 2)
+//   {
+//     mqtt_client.publish(myToppic[2], my_const_char_value);
+//     Serial.println("send output");
+//   }
 // }
 
 void keepWiFiAlive(void *parameter)
@@ -480,18 +543,6 @@ void setup()
   Serial.begin(112500);
   Serial.println("-----------------DATABIOTA PROJECT---------------------");
 
-  // Connect to MQTT broker
-  // mqtt_client.setCredentials(mqtt_username, mqtt_password);
-  mqtt_client.setClient(wifi.client);
-  // mqtt_client.connect(mqtt_client_id);
-  while (!mqtt_client.connected())
-  {
-    delay(1000);
-    Serial.println("Connecting to MQTT broker...");
-    // mqtt_client.connect(mqtt_client_id);
-  }
-  Serial.println("Connected to MQTT broker");
-
   xQueue1 = xQueueCreate(10, sizeof(int));
   xQueue2 = xQueueCreate(10, sizeof(int));
   xQueue3 = xQueueCreate(10, sizeof(int));
@@ -509,7 +560,7 @@ void setup()
   xTaskCreatePinnedToCore(
       recive,
       "recive",     // Task name
-      1500,         // Stack size (bytes)
+      5000,         // Stack size (bytes)
       NULL,         // Parameter
       2,            // Task priority
       &taskrecieve, // Task handle
@@ -569,11 +620,9 @@ void setup()
   //     NULL,                    // Task handl
   //     1);
 
-  // client.setServer(mqtt_server, 1883);
-  // client.setCallback(callback);
   vTaskDelete(NULL);
 }
 void loop()
 {
-  // client.loop();
+  mqtt_client.loop();
 }
