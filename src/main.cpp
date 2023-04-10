@@ -7,6 +7,10 @@
 #include <Adafruit_SHT31.h>
 #include <math.h>
 
+// wifi inisialisasi
+const char *ssid = "Neurabot";
+const char *password = "Kempul4321!";
+// mqtt inisislisasi
 const char *mqtt_server = "test.mosquitto.org";
 const char *mqtt_port = "1883";
 
@@ -34,9 +38,6 @@ struct toppic
 #define turbidityPin GPIO_NUM_35  // pin turbidity
 #define waterLevelPin GPIO_NUM_4  // pin Water level
 #define relayPompaPin GPIO_NUM_12 // pinPompa
-
-const char *ssid = "Neurabot";
-const char *password = "Kempul4321!";
 
 #define WIFI_TIMEOUT_MS 20000      // 20 second WiFi connection timeout
 #define WIFI_RECOVER_TIME_MS 30000 // Wait 30 seconds after a failed connection attempt
@@ -66,11 +67,11 @@ struct dataSensor
   float tbd_C;
 };
 
-float ph_value;
-float wather_Temp, air_temp, air_humidity, turbidity_ntu;
+// float ph_value;
+// float wather_Temp, air_temp, air_humidity, turbidity_ntu;
 
-int adc = 0;
-float volt;
+// int adc = 0;
+// float volt;
 
 // float readTbd()
 // {
@@ -394,6 +395,7 @@ void mh_z14a_Output_task(void *Parameters)
 
 void recive(void *pvParameters)
 {
+
   dataSensor recieveData;
   while (true)
   {
@@ -477,6 +479,18 @@ void setup()
 {
   Serial.begin(112500);
   Serial.println("-----------------DATABIOTA PROJECT---------------------");
+
+  // Connect to MQTT broker
+  mqtt_client.setCredentials(mqtt_username, mqtt_password);
+  mqtt_client.setClient(wifi.client);
+  mqtt_client.connect(mqtt_client_id);
+  while (!mqtt_client.connected())
+  {
+    delay(1000);
+    Serial.println("Connecting to MQTT broker...");
+    mqtt_client.connect(mqtt_client_id);
+  }
+  Serial.println("Connected to MQTT broker");
 
   xQueue1 = xQueueCreate(10, sizeof(int));
   xQueue2 = xQueueCreate(10, sizeof(int));
