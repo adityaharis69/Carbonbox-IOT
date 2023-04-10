@@ -481,14 +481,14 @@ void setup()
   Serial.println("-----------------DATABIOTA PROJECT---------------------");
 
   // Connect to MQTT broker
-  mqtt_client.setCredentials(mqtt_username, mqtt_password);
+  // mqtt_client.setCredentials(mqtt_username, mqtt_password);
   mqtt_client.setClient(wifi.client);
-  mqtt_client.connect(mqtt_client_id);
+  // mqtt_client.connect(mqtt_client_id);
   while (!mqtt_client.connected())
   {
     delay(1000);
     Serial.println("Connecting to MQTT broker...");
-    mqtt_client.connect(mqtt_client_id);
+    // mqtt_client.connect(mqtt_client_id);
   }
   Serial.println("Connected to MQTT broker");
 
