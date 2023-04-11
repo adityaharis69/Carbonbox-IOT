@@ -18,23 +18,33 @@ const char *mqtt_client_id = "ESP32Client";
 WiFiClient wifi_client;
 PubSubClient mqtt_client(wifi_client);
 
-QueueHandle_t xQueue1;
-QueueHandle_t xQueue2;
-QueueHandle_t xQueue3;
-QueueHandle_t xQueue4;
+QueueHandle_t xQueue1; // co2 input
+QueueHandle_t xQueue2; // co2 output
+QueueHandle_t xQueue3; // air tem
+QueueHandle_t xQueue4; // air rh
+QueueHandle_t xQueue5; // wather tem
+QueueHandle_t xQueue6; // ph
+QueueHandle_t xQueue7; // tbd
 
-// struct toppic
-// {
-//   const char *MQTT_PUB_CO2input = "esp32/mh-z14a/input";
-//   const char *MQTT_PUB_CO2output = "esp32/mh-z14a/output";
-//   const char *MQTT_PUB_ph = "esp32/dfRobot/ph";
-//   const char *MQTT_PUB_tbd = "esp32/dfRobot/tbd";
-//   const char *MQTT_PUB_AirTemp = "esp32/sht3x/temp";
-//   const char *MQTT_PUB_rh = "esp32/sht3x/rh";
-//   const char *MQTT_PUB_WatherTemp = "esp32/ds18b20/temp";
-// };
+struct toppic
+{
+  const char *MQTT_PUB_CO2input = "esp32/mh-z14a/input";
+  const char *MQTT_PUB_CO2output = "esp32/mh-z14a/output";
+  const char *MQTT_PUB_ph = "esp32/dfRobot/ph";
+  const char *MQTT_PUB_tbd = "esp32/dfRobot/tbd";
+  const char *MQTT_PUB_AirTemp = "esp32/sht3x/temp";
+  const char *MQTT_PUB_rh = "esp32/sht3x/rh";
+  const char *MQTT_PUB_WatherTemp = "esp32/ds18b20/temp";
+};
 
-const char *myToppic[4] = {"esp32/mh-z14a/input", "esp32/mh-z14a/output", "esp32/sht3x/rh", "esp32/sht3x/temp"};
+struct convertMqtt
+{
+  char floatChar[10];
+  const char *floatSensorVAl;
+  String my_str;
+  const char *my_const_char_value;
+};
+// const char *myToppic[4] = {"esp32/mh-z14a/input", "esp32/mh-z14a/output", "esp32/sht3x/rh", "esp32/sht3x/temp"};
 
 #define co2InputPin GPIO_NUM_33   // co2 input
 #define co2OutputPin GPIO_NUM_32  // co2 output
@@ -161,7 +171,7 @@ void sensor_sht3x_task(void *Parameters)
     dataSensor.air_Humidity_C = sht31.readHumidity();
     dataSensor.air_Temperature_C = sht31.readTemperature();
 
-    xQueueSend(xQueue3, &dataSensor.air_Humidity_C, portMAX_DELAY);
+    xQueueSend(xQueue4, &dataSensor.air_Humidity_C, portMAX_DELAY);
     xQueueSend(xQueue3, &dataSensor.air_Temperature_C, portMAX_DELAY);
 
     vTaskDelay(pdMS_TO_TICKS(3000));
@@ -242,7 +252,7 @@ void sensor_watherTemp_task(void *Parameters)
   {
     sensors.requestTemperatures();
     dataSensor.wather_Temperature_C = sensors.getTempCByIndex(0);
-    xQueueSend(xQueue4, &dataSensor.wather_Temperature_C, portMAX_DELAY);
+    xQueueSend(xQueue5, &dataSensor.wather_Temperature_C, portMAX_DELAY);
     vTaskDelay(pdMS_TO_TICKS(3000));
   }
 }
@@ -401,7 +411,12 @@ void mh_z14a_Output_task(void *Parameters)
 void recive(void *pvParameters)
 {
   dataSensor recieveData;
-  // toppic mqttTopic;
+  toppic mqttTopic;
+  convertMqtt conv_co2Input;
+  convertMqtt conv_co2Output;
+  convertMqtt conv_dalsTem;
+  convertMqtt conv_airRh;
+  convertMqtt conv_airTem;
 
   mqtt_client.setServer(mqtt_server, 1883);
   mqtt_client.connect(mqtt_client_id);
@@ -420,13 +435,14 @@ void recive(void *pvParameters)
       Serial.println("Connecting to MQTT broker...");
       mqtt_client.connect(mqtt_client_id);
     }
+    Serial.println("Sucess Connect");
 
     // Receive the data from the queue
-    xQueueReceive(xQueue4, &recieveData.wather_Temperature_C, portMAX_DELAY);
+    xQueueReceive(xQueue5, &recieveData.wather_Temperature_C, portMAX_DELAY);
     Serial.print("wather tem : ");
     Serial.print(recieveData.wather_Temperature_C);
     Serial.print("\t");
-    xQueueReceive(xQueue3, &recieveData.air_Humidity_C, portMAX_DELAY);
+    xQueueReceive(xQueue4, &recieveData.air_Humidity_C, portMAX_DELAY);
     Serial.print("air Humi : ");
     Serial.print(recieveData.air_Humidity_C);
     Serial.print("\t");
@@ -442,68 +458,53 @@ void recive(void *pvParameters)
     Serial.print("co2 Output : ");
     Serial.println(recieveData.co2_Output_C);
 
-    my_str = String(recieveData.co2_Input_C);
-    my_const_char_value = my_str.c_str();
-
     if (recieveData.co2_Input_C > 350)
     {
-      mqtt_client.publish(myToppic[0], my_const_char_value);
-      my_str = "";
-      my_const_char_value = "";
+      conv_co2Input.my_str = recieveData.co2_Input_C;
+      conv_co2Input.my_const_char_value = conv_co2Input.my_str.c_str();
+      mqtt_client.publish(mqttTopic.MQTT_PUB_CO2input, conv_co2Input.my_const_char_value);
+      Serial.println("sukses send 1");
     }
     delay(10);
 
-    my_str = String(recieveData.co2_Output_C);
-    my_const_char_value = my_str.c_str();
     if (recieveData.co2_Output_C > 350)
     {
-      mqtt_client.publish(myToppic[1], my_const_char_value);
-      my_str = "";
-      my_const_char_value = "";
+      conv_co2Output.my_str = recieveData.co2_Output_C;
+      conv_co2Output.my_const_char_value = conv_co2Output.my_str.c_str();
+      mqtt_client.publish(mqttTopic.MQTT_PUB_CO2output, conv_co2Output.my_const_char_value);
+      Serial.println("sukses send 2");
     }
     delay(10);
-    dtostrf(recieveData.air_Humidity_C, 6, 2, floatChar);
-    floatSensorVAl = floatChar;
-    if (recieveData.air_Humidity_C > 0)
+    if (recieveData.air_Temperature_C > 0)
     {
-      mqtt_client.publish(myToppic[3], floatSensorVAl);
-      floatChar = "";
-      floatSensorVAl = "";
+      dtostrf(recieveData.air_Temperature_C, 6, 2, conv_airTem.floatChar);
+      conv_airTem.floatSensorVAl = conv_airTem.floatChar;
+      mqtt_client.publish(mqttTopic.MQTT_PUB_AirTemp, conv_airTem.floatSensorVAl);
+      Serial.println("sukses send 3");
     }
 
     delay(10);
-
-    dtostrf(recieveData.air_Temperature_C, 6, 2, floatChar);
-    floatSensorVAl = floatChar;
     if (recieveData.air_Humidity_C > 0)
     {
-      mqtt_client.publish(myToppic[4], floatSensorVAl);
-      floatChar = "";
-      floatSensorVAl = "";
+      dtostrf(recieveData.air_Humidity_C, 6, 2, conv_airRh.floatChar);
+      conv_airRh.floatSensorVAl = conv_airRh.floatChar;
+      mqtt_client.publish(mqttTopic.MQTT_PUB_rh, conv_airRh.floatSensorVAl);
+      Serial.println("sukses send 4");
     }
 
+    delay(10);
+    if (recieveData.wather_Temperature_C > 0)
+    {
+      dtostrf(recieveData.wather_Temperature_C, 6, 2, conv_dalsTem.floatChar);
+      conv_dalsTem.floatSensorVAl = conv_dalsTem.floatChar;
+      mqtt_client.publish(mqttTopic.MQTT_PUB_WatherTemp, conv_dalsTem.floatSensorVAl);
+      Serial.println("sukses send 5");
+    }
     mqtt_client.disconnect();
     Serial.print("Free heap (bytes): ");
     Serial.println(xPortGetFreeHeapSize());
   }
 }
-
-// void sendValue(int valueSensor, int topic)
-// {
-//   String my_str = String(valueSensor);
-//   const char *my_const_char_value = my_str.c_str();
-
-//   if (topic == 1)
-//   {
-//     mqtt_client.publish(myToppic[0], my_const_char_value);
-//     Serial.println("send input");
-//   }
-//   else if (topic == 2)
-//   {
-//     mqtt_client.publish(myToppic[2], my_const_char_value);
-//     Serial.println("send output");
-//   }
-// }
 
 void keepWiFiAlive(void *parameter)
 {
@@ -547,6 +548,7 @@ void setup()
   xQueue2 = xQueueCreate(10, sizeof(int));
   xQueue3 = xQueueCreate(10, sizeof(int));
   xQueue4 = xQueueCreate(10, sizeof(int));
+  xQueue5 = xQueueCreate(10, sizeof(int));
 
   xTaskCreatePinnedToCore(
       keepWiFiAlive,
