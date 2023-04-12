@@ -6,6 +6,7 @@
 #include <Wire.h>
 #include <Adafruit_SHT31.h>
 #include <math.h>
+#include <ArduinoJson.h>
 
 // wifi inisialisasi
 const char *ssid = "Neurabot";
@@ -44,7 +45,6 @@ struct convertMqtt
   String my_str;
   const char *my_const_char_value;
 };
-// const char *myToppic[4] = {"esp32/mh-z14a/input", "esp32/mh-z14a/output", "esp32/sht3x/rh", "esp32/sht3x/temp"};
 
 #define co2InputPin GPIO_NUM_33   // co2 input
 #define co2OutputPin GPIO_NUM_32  // co2 output
@@ -65,10 +65,10 @@ static TaskHandle_t taskWifi;
 static TaskHandle_t taskco2In;
 static TaskHandle_t taskco2Out;
 static TaskHandle_t tasksht13;
-static TaskStatus_t tasktbd;
 static TaskHandle_t taskDals11;
 static TaskHandle_t taskph;
 static TaskHandle_t taskrecieve;
+static TaskHandle_t taskTurbidity;
 
 struct dataSensor
 {
@@ -81,80 +81,48 @@ struct dataSensor
   float wather_Temperature_C;
   float tbd_C;
 };
+void sensor_tbd_task(void *Parameters)
+{
+  pinMode(turbidityPin, INPUT);
+  int adc;
+  float volt;
+  dataSensor dataSensor;
 
-// float ph_value;
-// float wather_Temp, air_temp, air_humidity, turbidity_ntu;
+  while (true)
+  {
+    adc = analogRead(turbidityPin);
+    // Serial.println(adc);
+    adc = map(adc, 0, 4095, 0, 1023);
+    volt = adc * (5.0 / 1023.0);
+    volt = round_to_dp(volt, 2);
+    // Serial.println(volt);
+    dataSensor.tbd_C = -1120.4 * square(volt) + 5742.3 * volt - 4353.8;
+    if (dataSensor.tbd_C < 0)
+    {
+      Serial.println("Under zero");
+      dataSensor.tbd_C = -1.0;
+      xQueueSend(xQueue7, &dataSensor.tbd_C, portMAX_DELAY);
+    }
+    else
+    {
+      xQueueSend(xQueue7, &dataSensor.tbd_C, portMAX_DELAY);
+    }
+  }
+  vTaskDelay(pdMS_TO_TICKS(3000));
+}
 
-// int adc = 0;
-// float volt;
+float round_to_dp(float in_value, int decimal_place)
+{
+  float multiplier = powf(10.0f, decimal_place);
+  in_value = roundf(in_value * multiplier) / multiplier;
+  return in_value;
+}
 
-// float readTbd()
-// {
-//   int adc5;
-//   adc = analogRead(turbidityPin);
-//   adc5 = map(adc, 0, 4095, 0, 1023);
-//   volt = 0;
-//   for (int i = 0; i < 1000; i++)
-//   {
-//     volt += ((float)adc5 / 1023.0) * 5.0;
-//   }
-//   volt = (volt / 1000); //-0.159
-//   volt = round_to_dp(volt, 2);
-//   if (volt < 2.5)
-//   {
-//     turbidity_ntu = 3000;
-//   }
-//   else
-//   {
-//     turbidity_ntu = -1120.4 * square(volt) + 5742.3 * volt - 4353.8;
-//     //    Serial.println(turbidity_ntu);
-//     if (turbidity_ntu < 0)
-//     {
-//       turbidity_ntu = 0.0;
-//       return turbidity_ntu;
-//     }
-//     else
-//     {
-//       turbidity_ntu = turbidity_ntu;
-//       return turbidity_ntu;
-//     }
-//   }
-
-//   delay(1000);
-// }
-
-// void sensor_turbidity_task(void *Parameters)
-// {
-
-//   char myChar[10];
-//   const char *turbidity_value;
-
-//   while (true)
-//   {
-//     //    Serial.println(readTbd());
-//     dtostrf(readTbd(), 6, 2, myChar);
-//     turbidity_value = myChar;
-//     if (!client.connected())
-//     {
-//       reconnect(7, turbidity_value);
-//     }
-//     client.publish(MQTT_PUB_tbd, turbidity_value);
-//     vTaskDelay(pdMS_TO_TICKS(3000));
-//   }
-// }
-
-// float round_to_dp(float in_value, int decimal_place)
-// {
-//   float multiplier = powf(10.0f, decimal_place);
-//   in_value = roundf(in_value * multiplier) / multiplier;
-//   return in_value;
-// }
-
-// float square(float f)
-// {
-//   (abs(f) < 256.0);
-//   return f * f; // check if overflow will occur because 256*256 does not fit in an int anymore
-// }
+float square(float f)
+{
+  (abs(f) < 256.0);
+  return f * f; // check if overflow will occur because 256*256 does not fit in an int anymore
+}
 
 void sensor_sht3x_task(void *Parameters)
 {
@@ -178,69 +146,6 @@ void sensor_sht3x_task(void *Parameters)
   }
 }
 
-// void callback(char *topic, byte *payload, unsigned int length)
-// {
-//   Serial.print("Message arrived [");
-//   Serial.print(topic);
-//   Serial.print("] ");
-//   for (int i = 0; i < length; i++)
-//   {
-//     Serial.print((char)payload[i]);
-//   }
-//   Serial.println();
-// }
-
-// void reconnect(int number, const char *valueSensor)
-// {
-//   // Loop until we're reconnected
-//   while (!client.connected())
-//   {
-//     Serial.print("Attempting MQTT connection...");
-//     // Create a random client ID
-//     String clientId = "ESP32Client-";
-//     clientId += String(random(0xffff), HEX);
-//     // Attempt to connect
-//     if (client.connect(clientId.c_str()))
-//     {
-//       if (number == 1)
-//       {
-//         client.publish(MQTT_PUB_CO2input, valueSensor);
-//       }
-//       else if (number == 2)
-//       {
-//         client.publish(MQTT_PUB_CO2output, valueSensor);
-//       }
-//       else if (number == 3)
-//       {
-//         client.publish(MQTT_PUB_ph, valueSensor);
-//       }
-//       else if (number == 4)
-//       {
-//         client.publish(MQTT_PUB_WatherTemp, valueSensor);
-//       }
-//       else if (number == 5)
-//       {
-//         client.publish(MQTT_PUB_AirTemp, valueSensor);
-//       }
-//       else if (number == 6)
-//       {
-//         client.publish(MQTT_PUB_rh, valueSensor);
-//       }
-//       else if (number == 7)
-//       {
-//         client.publish(MQTT_PUB_tbd, valueSensor);
-//       }
-//     }
-//     else
-//     {
-//       Serial.print("failed, rc=");
-//       Serial.print(client.state());
-//       Serial.println(" try again in 5 seconds");
-//       delay(5000);
-//     }
-//   }
-// }
-
 void sensor_watherTemp_task(void *Parameters)
 {
   dataSensor dataSensor;
@@ -257,101 +162,48 @@ void sensor_watherTemp_task(void *Parameters)
   }
 }
 
-// void sensor_ph_task(void *Parameter)
-// {
-//   int pHArray[ArrayLenth]; // Store the average value of the sensor feedback
-//   int pHArrayIndex = 0;
-//   static float voltage;
-//   char myChar[10];
-//   const char *pHValue;
-//   static unsigned long samplingTime = millis();
-//   static unsigned long printTime = millis();
-//   while (true)
-//   {
-//     if (millis() - samplingTime > samplingInterval)
-//     {
-//       pHArray[pHArrayIndex++] = analogRead(phPin);
-//       if (pHArrayIndex == ArrayLenth)
-//         pHArrayIndex = 0;
-//       voltage = avergearray(pHArray, ArrayLenth) * 3.3 / 4095;
-//       ph_value = 3.5 * voltage + Offset;
-//       dtostrf(ph_value, 6, 2, myChar);
-//       pHValue = myChar;
-//       samplingTime = millis();
-//     }
+void sensor_ph_task(void *Parameter)
+{
+  pinMode(phPin, INPUT);
+  unsigned long int avgValue; // Store the average value of the sensor feedback
+  float b;
+  int buf[10], temp;
+  dataSensor dataSensor;
 
-//     if (!client.connected())
-//     {
-//       reconnect(3, pHValue);
-//     }
-//     client.publish(MQTT_PUB_ph, pHValue);
-//     vTaskDelay(pdMS_TO_TICKS(3000)); // wait for 1 second before reading again
-//   }
-// }
-
-// double avergearray(int *arr, int number)
-// {
-//   int i;
-//   int max, min;
-//   double avg;
-//   long amount = 0;
-//   if (number <= 0)
-//   {
-//     Serial.println("Error number for the array to avraging!/n");
-//     return 0;
-//   }
-//   if (number < 5)
-//   { // less than 5, calculated directly statistics
-//     for (i = 0; i < number; i++)
-//     {
-//       amount += arr[i];
-//     }
-//     avg = amount / number;
-//     return avg;
-//   }
-//   else
-//   {
-//     if (arr[0] < arr[1])
-//     {
-//       min = arr[0];
-//       max = arr[1];
-//     }
-//     else
-//     {
-//       min = arr[1];
-//       max = arr[0];
-//     }
-//     for (i = 2; i < number; i++)
-//     {
-//       if (arr[i] < min)
-//       {
-//         amount += min; // arr<min
-//         min = arr[i];
-//       }
-//       else
-//       {
-//         if (arr[i] > max)
-//         {
-//           amount += max; // arr>max
-//           max = arr[i];
-//         }
-//         else
-//         {
-//           amount += arr[i]; // min<=arr<=max
-//         }
-//       } // if
-//     }   // for
-//     avg = (double)amount / (number - 2);
-//   } // if
-//   return avg;
-// }
+  while (true)
+  {
+    for (int i = 0; i < 10; i++) // Get 10 sample value from the sensor for smooth the value
+    {
+      buf[i] = analogRead(phPin);
+      delay(10);
+    }
+    for (int i = 0; i < 9; i++) // sort the analog from small to large
+    {
+      for (int j = i + 1; j < 10; j++)
+      {
+        if (buf[i] > buf[j])
+        {
+          temp = buf[i];
+          buf[i] = buf[j];
+          buf[j] = temp;
+        }
+      }
+    }
+    avgValue = 0;
+    for (int i = 2; i < 8; i++) // take the average value of 6 center sample
+      avgValue += buf[i];
+    float Value = (float)avgValue * 3.3 / 4095.0 / 6; // convert the analog into millivolt
+    dataSensor.ph_C = 4.086 * Value;
+    xQueueSend(xQueue6, &dataSensor.ph_C, portMAX_DELAY);
+    vTaskDelay(pdMS_TO_TICKS(3000)); // wait for 1 second before reading again
+  }
+}
 
 void mh_z14a_Input_Task(void *Parameters)
 {
 
   pinMode(co2InputPin, INPUT_PULLDOWN);
   dataSensor dataSensor;
-  // int co2_Input_C;
   while (true)
   {
     while (digitalRead(co2InputPin) == LOW)
@@ -418,91 +270,219 @@ void recive(void *pvParameters)
   convertMqtt conv_airRh;
   convertMqtt conv_airTem;
 
-  mqtt_client.setServer(mqtt_server, 1883);
-  mqtt_client.connect(mqtt_client_id);
-  mqtt_client.setClient(wifi_client);
-
-  char floatChar[10];
-  const char *floatSensorVAl;
-  String my_str;
-  const char *my_const_char_value;
+  // mqtt_client.setServer(mqtt_server, 1883);
+  // mqtt_client.connect(mqtt_client_id);
+  // mqtt_client.setClient(wifi_client);
+  // while (!mqtt_client.connected())
+  // {
+  //   Serial.println("Connecting to MQTT broker...");
+  //   if (mqtt_client.connect(mqtt_client_id))
+  //   {
+  //     Serial.println("Connected to MQTT broker");
+  //   }
+  //   else
+  //   {
+  //     Serial.print("Failed to connect to MQTT broker, rc=");
+  //     Serial.print(mqtt_client.state());
+  //     Serial.println(" retrying...");
+  //     // delay(1000);
+  //   }
+  // }
 
   while (true)
   {
-    while (!mqtt_client.connected())
-    {
-      delay(500);
-      Serial.println("Connecting to MQTT broker...");
-      mqtt_client.connect(mqtt_client_id);
-    }
-    Serial.println("Sucess Connect");
-
     // Receive the data from the queue
+    xQueueReceive(xQueue6, &recieveData.ph_C, portMAX_DELAY);
+    // Serial.print("pH : ");
+    // Serial.print(recieveData.ph_C);
+    // Serial.print("\t");
+
+    xQueueReceive(xQueue7, &recieveData.tbd_C, portMAX_DELAY);
+    // Serial.print("Turbidity : ");
+    // Serial.print(recieveData.tbd_C);
+    // Serial.print("\t");
+
     xQueueReceive(xQueue5, &recieveData.wather_Temperature_C, portMAX_DELAY);
-    Serial.print("wather tem : ");
-    Serial.print(recieveData.wather_Temperature_C);
-    Serial.print("\t");
+    // Serial.print("wather tem : ");
+    // Serial.print(recieveData.wather_Temperature_C);
+    // Serial.print("\t");
     xQueueReceive(xQueue4, &recieveData.air_Humidity_C, portMAX_DELAY);
-    Serial.print("air Humi : ");
-    Serial.print(recieveData.air_Humidity_C);
-    Serial.print("\t");
+    // Serial.print("air Humi : ");
+    // Serial.print(recieveData.air_Humidity_C);
+    // Serial.print("\t");
     xQueueReceive(xQueue3, &recieveData.air_Temperature_C, portMAX_DELAY);
-    Serial.print("air tem : ");
-    Serial.print(recieveData.air_Temperature_C);
-    Serial.print("\t");
+    // Serial.print("air tem : ");
+    // Serial.print(recieveData.air_Temperature_C);
+    // Serial.print("\t");
     xQueueReceive(xQueue1, &recieveData.co2_Input_C, portMAX_DELAY);
-    Serial.print("co2 input : ");
-    Serial.print(recieveData.co2_Input_C);
-    Serial.print("\t");
+    // Serial.print("co2 input : ");
+    // Serial.print(recieveData.co2_Input_C);
+    // Serial.print("\t");
     xQueueReceive(xQueue2, &recieveData.co2_Output_C, portMAX_DELAY);
-    Serial.print("co2 Output : ");
-    Serial.println(recieveData.co2_Output_C);
+    // Serial.print("co2 Output : ");
+    // Serial.println(recieveData.co2_Output_C);
 
-    if (recieveData.co2_Input_C > 350)
-    {
-      conv_co2Input.my_str = recieveData.co2_Input_C;
-      conv_co2Input.my_const_char_value = conv_co2Input.my_str.c_str();
-      mqtt_client.publish(mqttTopic.MQTT_PUB_CO2input, conv_co2Input.my_const_char_value);
-      Serial.println("sukses send 1");
-    }
-    delay(10);
+    // with json
+    DynamicJsonDocument jsonDoc(128);
+    jsonDoc["co2Input"] = recieveData.co2_Input_C;
+    jsonDoc["co2Output"] = recieveData.co2_Output_C;
+    jsonDoc["airTem"] = recieveData.air_Temperature_C;
+    jsonDoc["airRh"] = recieveData.air_Humidity_C;
+    jsonDoc["watherTem"] = recieveData.wather_Temperature_C;
+    jsonDoc["pH"] = recieveData.ph_C;
+    jsonDoc["tbd"] = recieveData.tbd_C;
 
-    if (recieveData.co2_Output_C > 350)
+    char payload[128];
+    serializeJson(jsonDoc, payload);
+    Serial.println(payload);
+    if (!mqtt_client.connected())
     {
-      conv_co2Output.my_str = recieveData.co2_Output_C;
-      conv_co2Output.my_const_char_value = conv_co2Output.my_str.c_str();
-      mqtt_client.publish(mqttTopic.MQTT_PUB_CO2output, conv_co2Output.my_const_char_value);
-      Serial.println("sukses send 2");
+      reconnect();
     }
-    delay(10);
-    if (recieveData.air_Temperature_C > 0)
-    {
-      dtostrf(recieveData.air_Temperature_C, 6, 2, conv_airTem.floatChar);
-      conv_airTem.floatSensorVAl = conv_airTem.floatChar;
-      mqtt_client.publish(mqttTopic.MQTT_PUB_AirTemp, conv_airTem.floatSensorVAl);
-      Serial.println("sukses send 3");
-    }
+    mqtt_client.loop();
+    mqtt_client.publish(mqttTopic.MQTT_PUB_CO2input, "aditya");
+    // if (mqtt_client.connected())
+    // {
+    //   if (mqtt_client.publish(mqttTopic.MQTT_PUB_CO2input, payload))
+    //   {
+    //     Serial.println("Message published successfully!");
+    //   }
+    //   else
+    //   {
+    //     Serial.println("Failed to publish message!");
+    //   }
+    // }
+    // else
+    // {
+    //   while (!mqtt_client.connected())
+    //   {
+    //     Serial.println("reconnect to MQTT broker...");
+    //     if (mqtt_client.connect(mqtt_client_id))
+    //     {
+    //       if (mqtt_client.publish(mqttTopic.MQTT_PUB_CO2input, payload))
+    //       {
+    //         Serial.println("Message published successfully!");
+    //       }
+    //       else
+    //       {
+    //         Serial.println("Failed to publish message!");
+    //       }
+    //     }
+    //     else
+    //     {
+    //       Serial.print("Failed to connect to MQTT broker, rc=");
+    //       Serial.print(mqtt_client.state());
+    //       Serial.println(" retrying...");
+    //       // delay(1000);
+    //     }
+    //   }
+    // }
 
-    delay(10);
-    if (recieveData.air_Humidity_C > 0)
-    {
-      dtostrf(recieveData.air_Humidity_C, 6, 2, conv_airRh.floatChar);
-      conv_airRh.floatSensorVAl = conv_airRh.floatChar;
-      mqtt_client.publish(mqttTopic.MQTT_PUB_rh, conv_airRh.floatSensorVAl);
-      Serial.println("sukses send 4");
-    }
+    // mqtt_client.disconnect();
+    // mqtt_client.setServer(mqtt_server, 1883);
+    // mqtt_client.connect(mqtt_client_id);
+    // mqtt_client.setClient(wifi_client);
+    // while (!mqtt_client.connected())
+    // {
+    //   Serial.println("Connecting to MQTT broker...");
+    //   if (mqtt_client.connect("ESP32Client"))
+    //   {
+    //     Serial.println("Connected to MQTT broker");
+    //   }
+    //   else
+    //   {
+    //     Serial.print("Failed to connect to MQTT broker, rc=");
+    //     Serial.print(mqtt_client.state());
+    //     Serial.println(" retrying...");
+    //     delay(1000);
+    //   }
+    // }
+    // // delay(20);
+    // // xQueueReceive(xQueue1, &recieveData.co2_Input_C, portMAX_DELAY);
+    // if (recieveData.co2_Input_C > 350)
+    // {
+    //   //   // while (!mqtt_client.connected())
+    //   //   // {
 
-    delay(10);
-    if (recieveData.wather_Temperature_C > 0)
-    {
-      dtostrf(recieveData.wather_Temperature_C, 6, 2, conv_dalsTem.floatChar);
-      conv_dalsTem.floatSensorVAl = conv_dalsTem.floatChar;
-      mqtt_client.publish(mqttTopic.MQTT_PUB_WatherTemp, conv_dalsTem.floatSensorVAl);
-      Serial.println("sukses send 5");
-    }
+    //   //   //   Serial.println("connecting..................co2Input");
+    //   //   //   mqtt_client.connect(mqtt_client_id);
+    //   //   // }
+    //   //   // conv_co2Input.my_str = recieveData.co2_Input_C;
+    //   //   // conv_co2Input.my_const_char_value = conv_co2Input.my_str.c_str();
+    //          mqtt_client.publish(mqttTopic.MQTT_PUB_CO2input, conv_co2Input.my_const_char_value);
+    //   //   // Serial.print(conv_co2Input.my_const_char_value);
+    //   //   // Serial.print("\t");
+    // }
+    // // delay(20);
+    // // xQueueReceive(xQueue2, &recieveData.co2_Output_C, portMAX_DELAY);
+    // if (recieveData.co2_Output_C > 350)
+    // {
+    //   // while (!mqtt_client.connected())
+    //   // {
+
+    //   //   Serial.println("connecting.................. co2Output");
+    //   //   mqtt_client.connect(mqtt_client_id);
+    //   // }
+    //   // conv_co2Output.my_str = recieveData.co2_Output_C;
+    //   // conv_co2Output.my_const_char_value = conv_co2Output.my_str.c_str();
+    //   mqtt_client.publish(mqttTopic.MQTT_PUB_CO2output, conv_co2Output.my_const_char_value);
+    //   // Serial.print(conv_co2Output.my_const_char_value);
+    //   // Serial.print("\t");
+    // }
+    // // delay(20);
+    // // xQueueReceive(xQueue3, &recieveData.air_Temperature_C, portMAX_DELAY);
+    // if (recieveData.air_Temperature_C > 0)
+    // {
+    //   // while (!mqtt_client.connected())
+    //   // {
+
+    //   //   Serial.println("connecting..................airTem");
+    //   //   mqtt_client.connect(mqtt_client_id);
+    //   // }
+    //   // dtostrf(recieveData.air_Temperature_C, 6, 2, conv_airTem.floatChar);
+    //   // conv_airTem.floatSensorVAl = conv_airTem.floatChar;
+    //   mqtt_client.publish(mqttTopic.MQTT_PUB_AirTemp, conv_airTem.floatSensorVAl);
+    //   // Serial.print(conv_airTem.floatSensorVAl);
+    //   // Serial.print("\t");
+    // }
+
+    // // delay(20);
+    // // xQueueReceive(xQueue4, &recieveData.air_Humidity_C, portMAX_DELAY);
+    // if (recieveData.air_Humidity_C > 0)
+    // {
+    //   // while (!mqtt_client.connected())
+    //   // {
+
+    //   //   Serial.println("connecting.................. rh");
+    //   //   mqtt_client.connect(mqtt_client_id);
+    //   // }
+    //   // dtostrf(recieveData.air_Humidity_C, 6, 2, conv_airRh.floatChar);
+    //   // conv_airRh.floatSensorVAl = conv_airRh.floatChar;
+    //   mqtt_client.publish(mqttTopic.MQTT_PUB_rh, conv_airRh.floatSensorVAl);
+    //   // Serial.print(conv_airRh.floatSensorVAl);
+    //   // Serial.print("\t");
+    // }
+
+    // // delay(20);
+    // // xQueueReceive(xQueue5, &recieveData.wather_Temperature_C, portMAX_DELAY);
+    // if (recieveData.wather_Temperature_C > 0)
+    // {
+    //   // while (!mqtt_client.connected())
+    //   // {
+
+    //   //   Serial.println("connecting..................waterTem");
+    //   //   mqtt_client.connect(mqtt_client_id);
+    //   // }
+    //   // dtostrf(recieveData.wather_Temperature_C, 6, 2, conv_dalsTem.floatChar);
+    //   // conv_dalsTem.floatSensorVAl = conv_dalsTem.floatChar;
+    //   mqtt_client.publish(mqttTopic.MQTT_PUB_WatherTemp, conv_dalsTem.floatSensorVAl);
+    //   // Serial.print(conv_dalsTem.floatSensorVAl);
+    //   // Serial.println("\t");
+    // }
     mqtt_client.disconnect();
     Serial.print("Free heap (bytes): ");
     Serial.println(xPortGetFreeHeapSize());
+    // vTaskDelay(pdMS_TO_TICKS(3000));
   }
 }
 
@@ -539,6 +519,32 @@ void keepWiFiAlive(void *parameter)
   }
 }
 
+void reconnect()
+{
+  // Loop until we're reconnected
+  toppic toppic;
+  while (!mqtt_client.connected())
+  {
+    Serial.print("Attempting MQTT connection...");
+    // Attempt to connect
+    if (mqtt_client.connect("ESP32Client"))
+    {
+      Serial.println("connected");
+      mqtt_client.publish(toppic.MQTT_PUB_CO2input, "aditya");
+      // Subscribe
+      // client.subscribe("esp32/output");
+    }
+    else
+    {
+      Serial.print("failed, rc=");
+      Serial.print(mqtt_client.state());
+      Serial.println(" try again in 5 seconds");
+      // Wait 5 seconds before retrying
+      delay(1000);
+    }
+  }
+}
+
 void setup()
 {
   Serial.begin(112500);
@@ -549,11 +555,15 @@ void setup()
   xQueue3 = xQueueCreate(10, sizeof(int));
   xQueue4 = xQueueCreate(10, sizeof(int));
   xQueue5 = xQueueCreate(10, sizeof(int));
+  xQueue6 = xQueueCreate(10, sizeof(int));
+  xQueue7 = xQueueCreate(10, sizeof(int));
+
+  mqtt_client.setServer(mqtt_server, 1883);
 
   xTaskCreatePinnedToCore(
       keepWiFiAlive,
       "keepWiFiAlive", // Task name
-      3000,            // Stack size (bytes)
+      5000,            // Stack size (bytes)
       NULL,            // Parameter
       1,               // Task priority
       &taskWifi,       // Task handle
@@ -564,41 +574,41 @@ void setup()
       "recive",     // Task name
       5000,         // Stack size (bytes)
       NULL,         // Parameter
-      2,            // Task priority
+      1,            // Task priority
       &taskrecieve, // Task handle
       1);
 
   xTaskCreatePinnedToCore(
       mh_z14a_Input_Task,
       "mh_z14a_Input_Task", // Task name
-      2000,                 // Stack size (bytes)
+      3000,                 // Stack size (bytes)
       NULL,                 // Parameter
-      1,                    // Task priority
+      2,                    // Task priority
       &taskco2In,           // Task handle
       1);
 
   xTaskCreatePinnedToCore(
       mh_z14a_Output_task,
       "mh_z14a_Output_task", // Task name
-      2000,                  // Stack size (bytes)
+      3000,                  // Stack size (bytes)
       NULL,                  // Parameter
-      1,                     // Task priority
+      2,                     // Task priority
       &taskco2Out,           // Task handle
       0);
 
-  // xTaskCreatePinnedToCore(
-  //     sensor_ph_task,
-  //     "sensor_ph_task", // Task name
-  //     2048,             // Stack size (bytes)
-  //     NULL,             // Parameter
-  //     1,                // Task priority
-  //     NULL,             // Task handl
-  //     1);
+  xTaskCreatePinnedToCore(
+      sensor_ph_task,
+      "sensor_ph_task", // Task name
+      2500,             // Stack size (bytes)
+      NULL,             // Parameter
+      2,                // Task priority
+      &taskph,          // Task handl
+      1);
 
   xTaskCreatePinnedToCore(
       sensor_watherTemp_task,
       "sensor_watherTemp_task", // Task name
-      2000,                     // Stack size (bytes)
+      2500,                     // Stack size (bytes)
       NULL,                     // Parameter
       2,                        // Task priority
       &taskDals11,              // Task handle
@@ -613,18 +623,19 @@ void setup()
       &tasksht13,          // Task handle
       1);
 
-  // xTaskCreatePinnedToCore(
-  //     sensor_turbidity_task,
-  //     "sensor_turbidity_task", // Task name
-  //     3048,                    // Stack size (bytes)
-  //     NULL,                    // Parameter
-  //     1,                       // Task priority
-  //     NULL,                    // Task handl
-  //     1);
+  xTaskCreatePinnedToCore(
+      sensor_tbd_task,
+      " sensor_tbd_task",
+      2000,
+      NULL,
+      2,
+      &taskTurbidity,
+      1);
 
   vTaskDelete(NULL);
 }
+
 void loop()
 {
-  mqtt_client.loop();
+  // mqtt_client.loop();
 }
