@@ -274,7 +274,7 @@ void recive(void *pvParameters)
     Serial.println(recieveData.tbd_C);
 
     // with json
-    DynamicJsonDocument jsonDoc(128);
+    DynamicJsonDocument jsonDoc(256);
     jsonDoc["co2Input"] = String(recieveData.co2_Input_C);
     jsonDoc["co2Output"] = String(recieveData.co2_Output_C);
     jsonDoc["airTem"] = String(recieveData.air_Temperature_C, 2);
