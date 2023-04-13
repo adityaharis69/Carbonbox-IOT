@@ -65,10 +65,10 @@ static TaskHandle_t taskph;
 static TaskHandle_t taskrecieve;
 static TaskHandle_t taskTurbidity;
 static TaskHandle_t taskmqttPublish;
+static TaskHandle_t taskWatherOverLine;
 
 struct dataSensor
 {
-  /* data */
   int co2_Input_C;
   int co2_Output_C;
   float air_Temperature_C;
@@ -77,6 +77,30 @@ struct dataSensor
   float wather_Temperature_C;
   float tbd_C;
 };
+
+void watherOverLine(void *Parameters)
+{
+  pinMode(relayPompaPin, OUTPUT);
+  pinMode(waterLevelPin, INPUT_PULLUP);
+  // digitalWrite(relayPompaPin, HIGH);
+
+  while (true)
+  {
+    Serial.println(digitalRead(waterLevelPin));
+    if (digitalRead(relayPompaPin) == 0)
+    {
+      digitalWrite(relayPompaPin, HIGH);
+      Serial.println("break PIMP");
+    }
+    else
+    {
+      digitalWrite(relayPompaPin, LOW);
+      Serial.println("runnung PUMP");
+    }
+    vTaskDelay(pdMS_TO_TICKS(200));
+  }
+}
+
 void sensor_tbd_task(void *Parameters)
 {
   pinMode(turbidityPin, INPUT);
@@ -390,78 +414,86 @@ void setup()
       &taskWifi,       // Task handle
       0);
 
-  xTaskCreatePinnedToCore(
-      recive,
-      "recive",     // Task name
-      4000,         // Stack size (bytes)
-      NULL,         // Parameter
-      1,            // Task priority
-      &taskrecieve, // Task handle
-      1);
+  // xTaskCreatePinnedToCore(
+  //     recive,
+  //     "recive",     // Task name
+  //     4000,         // Stack size (bytes)
+  //     NULL,         // Parameter
+  //     1,            // Task priority
+  //     &taskrecieve, // Task handle
+  //     1);
+
+  // xTaskCreatePinnedToCore(
+  //     publishMqtt,
+  //     "publishMqtt",    // Task name
+  //     5000,             // Stack size (bytes)
+  //     NULL,             // Parameter
+  //     2,                // Task priority
+  //     &taskmqttPublish, // Task handle
+  //     1);
+
+  // xTaskCreatePinnedToCore(
+  //     mh_z14a_Input_Task,
+  //     "mh_z14a_Input_Task", // Task name
+  //     5000,                 // Stack size (bytes)
+  //     NULL,                 // Parameter
+  //     2,                    // Task priority
+  //     &taskco2In,           // Task handle
+  //     1);
+
+  // xTaskCreatePinnedToCore(
+  //     mh_z14a_Output_task,
+  //     "mh_z14a_Output_task", // Task name
+  //     5000,                  // Stack size (bytes)
+  //     NULL,                  // Parameter
+  //     1,                     // Task priority
+  //     &taskco2Out,           // Task handle
+  //     1);
+
+  // xTaskCreatePinnedToCore(
+  //     sensor_ph_task,
+  //     "sensor_ph_task", // Task name
+  //     2500,             // Stack size (bytes)
+  //     NULL,             // Parameter
+  //     2,                // Task priority
+  //     &taskph,          // Task handl
+  //     1);
+
+  // xTaskCreatePinnedToCore(
+  //     sensor_watherTemp_task,
+  //     "sensor_watherTemp_task", // Task name
+  //     2500,                     // Stack size (bytes)
+  //     NULL,                     // Parameter
+  //     3,                        // Task priority
+  //     &taskDals11,              // Task handle
+  //     0);
+
+  // xTaskCreatePinnedToCore(
+  //     sensor_sht3x_task,
+  //     "sensor_sht3x_task", // Task name
+  //     2500,                // Stack size (bytes)
+  //     NULL,                // Parameter
+  //     3,                   // Task priority
+  //     &tasksht13,          // Task handle
+  //     1);
+
+  // xTaskCreatePinnedToCore(
+  //     sensor_tbd_task,
+  //     " sensor_tbd_task",
+  //     2000,
+  //     NULL,
+  //     3,
+  //     &taskTurbidity,
+  //     1);
 
   xTaskCreatePinnedToCore(
-      publishMqtt,
-      "publishMqtt",    // Task name
-      5000,             // Stack size (bytes)
-      NULL,             // Parameter
-      2,                // Task priority
-      &taskmqttPublish, // Task handle
-      1);
-
-  xTaskCreatePinnedToCore(
-      mh_z14a_Input_Task,
-      "mh_z14a_Input_Task", // Task name
-      5000,                 // Stack size (bytes)
-      NULL,                 // Parameter
-      2,                    // Task priority
-      &taskco2In,           // Task handle
-      1);
-
-  xTaskCreatePinnedToCore(
-      mh_z14a_Output_task,
-      "mh_z14a_Output_task", // Task name
-      5000,                  // Stack size (bytes)
-      NULL,                  // Parameter
-      1,                     // Task priority
-      &taskco2Out,           // Task handle
-      1);
-
-  xTaskCreatePinnedToCore(
-      sensor_ph_task,
-      "sensor_ph_task", // Task name
-      2500,             // Stack size (bytes)
-      NULL,             // Parameter
-      2,                // Task priority
-      &taskph,          // Task handl
-      1);
-
-  xTaskCreatePinnedToCore(
-      sensor_watherTemp_task,
-      "sensor_watherTemp_task", // Task name
-      2500,                     // Stack size (bytes)
-      NULL,                     // Parameter
-      3,                        // Task priority
-      &taskDals11,              // Task handle
-      0);
-
-  xTaskCreatePinnedToCore(
-      sensor_sht3x_task,
-      "sensor_sht3x_task", // Task name
-      2500,                // Stack size (bytes)
-      NULL,                // Parameter
-      3,                   // Task priority
-      &tasksht13,          // Task handle
-      1);
-
-  xTaskCreatePinnedToCore(
-      sensor_tbd_task,
-      " sensor_tbd_task",
+      watherOverLine,
+      " watherOverLine",
       2000,
       NULL,
       3,
-      &taskTurbidity,
+      &taskWatherOverLine,
       1);
-
   // Connect to MQTT broker
 
   vTaskDelete(NULL);
