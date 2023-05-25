@@ -7,17 +7,45 @@
 #include <Adafruit_SHT31.h>
 #include <math.h>
 #include <ArduinoJson.h>
+#include <InfluxDbClient.h>
+#include <InfluxDbCloud.h>
+#include <Point.h>
+#include <WiFiMulti.h>
 
-// wifi inisialisasi
+WiFiMulti multi;
+
 const char *ssid = "Neurabot";
 const char *password = "Kempul4321!";
-// mqtt inisislisasi
-const char *mqtt_server = "test.mosquitto.org";
-const int mqtt_port = 1883;
-const char *mqtt_client_id = "ESP32Client";
 
-WiFiClient wifi_client;
-PubSubClient mqtt_client(wifi_client);
+#define DEVICE "CARBONBOX"
+#define WIFI_SSID "NEURABOT"
+#define INFLUXDB_URL "https://us-east-1-1.aws.cloud2.influxdata.com"
+#define INFLUXDB_TOKEN "mSOBCAjSDcliB6_9fdFMOvtRbu97V9wUi4rf4gj9hLuu7OQZG8uJgqxkKzZj7kjjnl19LszWzAPCLi5Bo9kxNg=="
+#define INFLUXDB_ORG "b74c259f49b45988"
+#define INFLUXDB_BUCKET "CARBONBOX"
+// Time zone info
+#define TZ_INFO "UTC7"
+
+Point sensor("wifi_status");
+
+// InfluxDB client instance with preconfigured InfluxCloud certificate
+InfluxDBClient clientInflux(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
+
+// InfluxDBClient clientInflux(my_client, INFLUXDB_URL, INFLUXDB_TOKEN);
+// InfluxDBClient influxDbClient(wifiClient, influxDbUrl, influxDbToken);
+// wifi inisialisasi
+// Data point
+// Point sensor("wifi_status");
+
+// mqtt inisislisasi
+// const char *mqtt_server = "test.mosquitto.org";
+// const int mqtt_port = 1883;
+// const char *mqtt_client_id = "ESP32Client";
+
+// PubSubClient mqtt_client(wifi_client);
+
+const int d_sensor = 2;
+int arrayData[d_sensor] = {0, 0};
 
 char payload[256];
 
@@ -28,18 +56,18 @@ QueueHandle_t xQueue4; // air rh
 QueueHandle_t xQueue5; // wather tem
 QueueHandle_t xQueue6; // ph
 QueueHandle_t xQueue7; // tbd
-QueueHandle_t xQueue8; // payload
+// QueueHandle_t xQueue8; // payload
 
-struct toppic
-{
-  const char *MQTT_PUB_CO2input = "esp32/mh-z14a/input";
-  const char *MQTT_PUB_CO2output = "esp32/mh-z14a/output";
-  const char *MQTT_PUB_ph = "esp32/dfRobot/ph";
-  const char *MQTT_PUB_tbd = "esp32/dfRobot/tbd";
-  const char *MQTT_PUB_AirTemp = "esp32/sht3x/temp";
-  const char *MQTT_PUB_rh = "esp32/sht3x/rh";
-  const char *MQTT_PUB_WatherTemp = "esp32/ds18b20/temp";
-};
+// struct toppic
+// {
+//   const char *MQTT_PUB_CO2input = "esp32/mh-z14a/input";
+//   const char *MQTT_PUB_CO2output = "esp32/mh-z14a/output";
+//   const char *MQTT_PUB_ph = "esp32/dfRobot/ph";
+//   const char *MQTT_PUB_tbd = "esp32/dfRobot/tbd";
+//   const char *MQTT_PUB_AirTemp = "esp32/sht3x/temp";
+//   const char *MQTT_PUB_rh = "esp32/sht3x/rh";
+//   const char *MQTT_PUB_WatherTemp = "esp32/ds18b20/temp";
+// };
 
 #define co2InputPin GPIO_NUM_33   // co2 input
 #define co2OutputPin GPIO_NUM_32  // co2 output
@@ -252,41 +280,84 @@ void mh_z14a_Input_Task(void *Parameters)
 
 void mh_z14a_Output_task(void *Parameters)
 {
-  pinMode(co2OutputPin, INPUT_PULLDOWN);
   dataSensor dataSensor;
   while (true)
   {
-    while (digitalRead(co2OutputPin) == LOW)
+    bool check = checkSerial("u");
+    if (check)
     {
-    };
-    long t0 = millis();
-    while (digitalRead(co2OutputPin) == HIGH)
-    {
-    };
-    long t1 = millis();
-    while (digitalRead(co2OutputPin) == LOW)
-    {
-    };
-    long t2 = millis();
-    long th = t1 - t0;
-    long tl = t2 - t1;
-    long ppm = 5000L * (th - 2) / (th + tl - 4);
-    while (digitalRead(co2OutputPin) == HIGH)
-    {
+      serialRead();
+      dataSensor.co2_Output_C = int(arrayData[1]);
+      xQueueSend(xQueue2, &dataSensor.co2_Output_C, portMAX_DELAY);
     }
-    dataSensor.co2_Output_C = int(ppm);
-    xQueueSend(xQueue2, &dataSensor.co2_Output_C, portMAX_DELAY);
+
+    Serial2.print("s:");
     vTaskDelay(pdMS_TO_TICKS(10000)); // wait for 1 second before reading again
   }
+}
+boolean serialRead()
+{
+  if (Serial2.available() > 0) // program untuk parsing data
+  {
+    String input = Serial2.readStringUntil('\n');
+    input.trim();
+
+    int tempIndex = 0;
+    for (int i = 0; i < d_sensor; i++)
+    {
+      int index = input.indexOf(":", tempIndex);
+      arrayData[i] = input.substring(tempIndex, index).toInt();
+      tempIndex = index + 1;
+    }
+
+    input = "";
+
+    return true;
+  }
+  return false;
+}
+
+boolean checkSerial(String value)
+{
+  if (Serial2.available() > 0)
+  {
+    String input = Serial2.readStringUntil(':');
+    input.trim();
+    if (input == value)
+    {
+      return true;
+    }
+    return false;
+  }
+  return false;
 }
 
 void recive(void *pvParameters)
 {
   dataSensor recieveData;
-  toppic mqttTopic;
+  timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
+
+  // add tag
+  sensor.addTag("device", DEVICE);
+  sensor.addTag("SSID", WiFi.SSID());
+
+  // Check server connection
+  // Connect to InfluxDB
+
+  String filed[7] = {"CO2_IN", "CO2_OUT", "TEMP_UDARA", "RH_UDARA", "TEMP_AIR", "PH", "TBD"};
 
   while (true)
   {
+    if (!clientInflux.validateConnection())
+    {
+      Serial.println("InfluxDB connection failed!");
+      while (1)
+      {
+        delay(500);
+      }
+    }
+    Serial.println("Connected to InfluxDB");
+
     // Receive the data from the queue
     xQueueReceive(xQueue7, &recieveData.tbd_C, portMAX_DELAY);
     xQueueReceive(xQueue6, &recieveData.ph_C, portMAX_DELAY);
@@ -295,68 +366,138 @@ void recive(void *pvParameters)
     xQueueReceive(xQueue3, &recieveData.air_Temperature_C, portMAX_DELAY);
     xQueueReceive(xQueue2, &recieveData.co2_Output_C, portMAX_DELAY);
     xQueueReceive(xQueue1, &recieveData.co2_Input_C, portMAX_DELAY);
+
+    Serial.print("Data Sensor");
+    Serial.print(" ");
+    Serial.print(recieveData.co2_Input_C);
+    Serial.print(" ");
+    Serial.print(recieveData.co2_Output_C);
+    Serial.print(" ");
+    Serial.print(recieveData.air_Temperature_C);
+    Serial.print(" ");
+    Serial.print(recieveData.air_Humidity_C);
+    Serial.print(" ");
+    Serial.print(recieveData.wather_Temperature_C);
+    Serial.print(" ");
+    Serial.print(recieveData.ph_C);
+    Serial.print(" ");
     Serial.println(recieveData.tbd_C);
 
-    // with json
-    DynamicJsonDocument jsonDoc(256);
-    jsonDoc["co2Input"] = String(recieveData.co2_Input_C);
-    jsonDoc["co2Output"] = String(recieveData.co2_Output_C);
-    jsonDoc["airTem"] = String(recieveData.air_Temperature_C, 2);
-    jsonDoc["airRh"] = String(recieveData.air_Humidity_C, 2);
-    jsonDoc["watherTem"] = String(recieveData.wather_Temperature_C, 2);
-    jsonDoc["tbd"] = String(recieveData.tbd_C, 2);
-    jsonDoc["pH"] = String(recieveData.ph_C, 2);
+    sensor.clearFields();
+    sensor.addField(filed[0], recieveData.co2_Input_C);
+    sensor.addField(filed[1], recieveData.co2_Output_C);
+    sensor.addField(filed[2], recieveData.air_Temperature_C);
+    sensor.addField(filed[3], recieveData.air_Humidity_C);
+    sensor.addField(filed[4], recieveData.wather_Temperature_C);
+    sensor.addField(filed[5], recieveData.ph_C);
+    sensor.addField(filed[6], recieveData.tbd_C);
 
-    serializeJson(jsonDoc, payload);
-    Serial.println(payload);
-    xQueueSend(xQueue8, &payload, portMAX_DELAY);
-    Serial.print("Free heap (bytes): ");
+    // Check WiFi connection and reconnect if needed
+    // If no Wifi signal, try to reconnect it
+    if (multi.run() != WL_CONNECTED)
+    {
+      Serial.println("Wifi connection lost");
+    }
+
+    // Write point
+    if (!clientInflux.writePoint(sensor))
+    {
+      Serial.print("InfluxDB write failed: ");
+      Serial.println(clientInflux.getLastErrorMessage());
+    }
+
+    // for (int x = 0; x <= 7; x++)
+    // {
+    //   nilai[0]=
+
+    // }
+    // with json
+    // DynamicJsonDocument jsonDoc(256);
+    // jsonDoc["co2Input"] = String(recieveData.co2_Input_C);
+    // jsonDoc["co2Output"] = String(recieveData.co2_Output_C);
+    // jsonDoc["airTem"] = String(recieveData.air_Temperature_C, 2);
+    // jsonDoc["airRh"] = String(recieveData.air_Humidity_C, 2);
+    // jsonDoc["watherTem"] = String(recieveData.wather_Temperature_C, 2);
+    // jsonDoc["tbd"] = String(recieveData.tbd_C, 2);
+    // jsonDoc["pH"] = String(recieveData.ph_C, 2);
+    // serializeJson(jsonDoc, payload);
+
+    // // Parse JSON string
+    // DeserializationError error = deserializeJson(jsonDoc, payload);
+    // JsonArray jsonArray = jsonDoc.as<JsonArray>();
+
+    // int dataCount = jsonArray.size();
+
+    // Serial.print("data count  : ");
+    // Serial.println(dataCount);
+
+    // for (int a = 0; a <= 6; a++)
+    // {
+    //   // Create a data point
+    //   Point dataPoint(filed[a]);
+    //   dataPoint.addField("value", 120);
+
+    //   // Write data point to InfluxDB
+    //   if (clientInflux.writePoint(dataPoint))
+    //   {
+    //     Serial.println("Data sent to InfluxDB");
+    //   }
+    //   else
+    //   {
+    //     Serial.println("Failed to send data to InfluxDB");
+    //   }
+    // }
+
+    // Serial.println(payload);
+    // xQueueSend(xQueue8, &payload, portMAX_DELAY);
+    // Serial.print("Free heap (bytes): ");
+    Serial.print("HEAP MEMORI  :: ");
     Serial.println(xPortGetFreeHeapSize());
     // vTaskDelay(pdMS_TO_TICKS(10000));
   }
 }
 
-void publishMqtt(void *Parameters)
-{
-  while (true)
-  {
-    xQueueReceive(xQueue8, &payload, portMAX_DELAY);
-    if (!mqtt_client.connected())
-    {
-      reconnect();
-    }
+// void publishMqtt(void *Parameters)
+// {
+//   while (true)
+//   {
+//     xQueueReceive(xQueue8, &payload, portMAX_DELAY);
+//     if (!mqtt_client.connected())
+//     {
+//       reconnect();
+//     }
 
-    bool result = mqtt_client.publish("my/topic", payload);
-    if (result)
-    {
-      Serial.println("Message published successfully");
-    }
-    else
-    {
-      Serial.println("Message failed to publish");
-    }
-    mqtt_client.loop();
-    // vTaskDelay(pdMS_TO_TICKS(11000));
-  }
-}
+//     bool result = mqtt_client.publish("my/topic", payload);
+//     if (result)
+//     {
+//       Serial.println("Message published successfully");
+//     }
+//     else
+//     {
+//       Serial.println("Message failed to publish");
+//     }
+//     mqtt_client.loop();
+//     // vTaskDelay(pdMS_TO_TICKS(11000));
+//   }
+// }
 
-void reconnect()
-{
-  while (!mqtt_client.connected())
-  {
-    Serial.println("Connecting to MQTT broker...");
-    if (mqtt_client.connect("espjos"))
-    {
-      Serial.println("Connected to MQTT broker");
-      mqtt_client.subscribe("my/topic");
-    }
-    else
-    {
-      Serial.println("Connection to MQTT broker failed");
-      delay(5000);
-    }
-  }
-}
+// void reconnect()
+// {
+//   while (!mqtt_client.connected())
+//   {
+//     Serial.println("Connecting to MQTT broker...");
+//     if (mqtt_client.connect("espjos"))
+//     {
+//       Serial.println("Connected to MQTT broker");
+//       mqtt_client.subscribe("my/topic");
+//     }
+//     else
+//     {
+//       Serial.println("Connection to MQTT broker failed");
+//       delay(5000);
+//     }
+//   }
+// }
 
 void keepWiFiAlive(void *parameter)
 {
@@ -370,17 +511,17 @@ void keepWiFiAlive(void *parameter)
 
     Serial.println("[WIFI] Connecting");
     WiFi.mode(WIFI_STA);
-    WiFi.begin(ssid, password);
-
+    multi.addAP(ssid, password);
+    // WiFi.begin(, );
     unsigned long startAttemptTime = millis();
 
     // Keep looping while we're not connected and haven't reached the timeout
-    while (WiFi.status() != WL_CONNECTED &&
+    while (multi.run() != WL_CONNECTED &&
            millis() - startAttemptTime < WIFI_TIMEOUT_MS)
     {
     }
 
-    if (WiFi.status() != WL_CONNECTED)
+    if (multi.run() != WL_CONNECTED)
     {
       Serial.println("[WIFI] FAILED");
       vTaskDelay(WIFI_RECOVER_TIME_MS / portTICK_PERIOD_MS);
@@ -394,8 +535,35 @@ void keepWiFiAlive(void *parameter)
 void setup()
 {
   Serial.begin(112500);
+  Serial2.begin(9600);
+
   Serial.println("-----------------DATABIOTA PROJECT---------------------");
-  mqtt_client.setServer(mqtt_server, mqtt_port);
+  // mqtt_client.setServer(mqtt_server, mqtt_port);
+  // Accurate time is necessary for certificate validation
+  // For the fastest time sync find NTP servers in your area: https://www.pool.ntp.org/zone/
+  // Syncing progress and the time will be printed to Serial
+
+  // timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
+
+  // Data point
+  Point sensor("wifi_status");
+  sensor.addTag("device", "CarbonBox");
+  sensor.addTag("sensor", "CO2");
+  sensor.addTag("sensor", "pH");
+  sensor.addTag("sensor", "temparature air");
+  sensor.addTag("sensor", "temparature udara");
+  sensor.addTag("sensor", "RH udara");
+
+  // influxDbClient.setConnectionParams(influxDbOrg, influxDbBucket);
+
+  // Wait for InfluxDB connection
+  // while (!influxDbClient.validateConnection())
+  // {
+  //   delay(1000);
+  //   Serial.println("Connecting to InfluxDB...");
+  // }
+  // Serial.println("Connected to InfluxDB");
+
   xQueue1 = xQueueCreate(10, sizeof(int));
   xQueue2 = xQueueCreate(10, sizeof(int));
   xQueue3 = xQueueCreate(10, sizeof(int));
@@ -403,7 +571,7 @@ void setup()
   xQueue5 = xQueueCreate(10, sizeof(int));
   xQueue6 = xQueueCreate(10, sizeof(int));
   xQueue7 = xQueueCreate(10, sizeof(int));
-  xQueue8 = xQueueCreate(10, sizeof(int));
+  // xQueue8 = xQueueCreate(10, sizeof(int));
 
   xTaskCreatePinnedToCore(
       keepWiFiAlive,
@@ -417,25 +585,25 @@ void setup()
   xTaskCreatePinnedToCore(
       recive,
       "recive",     // Task name
-      4000,         // Stack size (bytes)
+      10000,        // Stack size (bytes)
       NULL,         // Parameter
       1,            // Task priority
       &taskrecieve, // Task handle
       1);
 
-  xTaskCreatePinnedToCore(
-      publishMqtt,
-      "publishMqtt",    // Task name
-      5000,             // Stack size (bytes)
-      NULL,             // Parameter
-      2,                // Task priority
-      &taskmqttPublish, // Task handle
-      1);
+  // xTaskCreatePinnedToCore(
+  //     publishMqtt,
+  //     "publishMqtt",    // Task name
+  //     5000,             // Stack size (bytes)
+  //     NULL,             // Parameter
+  //     2,                // Task priority
+  //     &taskmqttPublish, // Task handle
+  //     1);
 
   xTaskCreatePinnedToCore(
       mh_z14a_Input_Task,
       "mh_z14a_Input_Task", // Task name
-      5000,                 // Stack size (bytes)
+      7000,                 // Stack size (bytes)
       NULL,                 // Parameter
       2,                    // Task priority
       &taskco2In,           // Task handle
