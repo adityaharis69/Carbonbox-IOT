@@ -17,16 +17,19 @@ WiFiMulti multi;
 const char *ssid = "Neurabot";
 const char *password = "Kempul4321!";
 
-#define DEVICE "CARBONBOX"
+#define DEVICE "CARBONBOX-V1"
 #define WIFI_SSID "NEURABOT"
 #define INFLUXDB_URL "https://us-east-1-1.aws.cloud2.influxdata.com"
-#define INFLUXDB_TOKEN "mSOBCAjSDcliB6_9fdFMOvtRbu97V9wUi4rf4gj9hLuu7OQZG8uJgqxkKzZj7kjjnl19LszWzAPCLi5Bo9kxNg=="
+#define INFLUXDB_TOKEN "1UCnp58kS25EHtJrBDpdMqyKZ4rs2y7j-NlqAv9tA4mKpNd6w42X83xaAxzMmSb9-7jGJS14JyWyA021FB4-aw=="
 #define INFLUXDB_ORG "b74c259f49b45988"
 #define INFLUXDB_BUCKET "CARBONBOX"
 // Time zone info
 #define TZ_INFO "UTC7"
 
 Point sensor("wifi_status");
+
+// durasi tunggu task
+uint32_t waktuTunggu = 30000;
 
 // InfluxDB client instance with preconfigured InfluxCloud certificate
 InfluxDBClient clientInflux(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
@@ -69,8 +72,8 @@ QueueHandle_t xQueue7; // tbd
 //   const char *MQTT_PUB_WatherTemp = "esp32/ds18b20/temp";
 // };
 
-#define co2InputPin GPIO_NUM_33   // co2 input
-#define co2OutputPin GPIO_NUM_32  // co2 output
+#define co2InputPin GPIO_NUM_32   // co2 input
+#define co2OutputPin GPIO_NUM_33  // co2 output
 #define phPin GPIO_NUM_34         // ph
 #define watherTemPin GPIO_NUM_19  // pin DS18B20
 #define turbidityPin GPIO_NUM_35  // pin turbidity
@@ -156,7 +159,7 @@ void sensor_tbd_task(void *Parameters)
       xQueueSend(xQueue7, &dataSensor.tbd_C, portMAX_DELAY);
     }
   }
-  vTaskDelay(pdMS_TO_TICKS(10000));
+  vTaskDelay(pdMS_TO_TICKS(waktuTunggu));
 }
 
 float round_to_dp(float in_value, int decimal_place)
@@ -247,38 +250,38 @@ void sensor_ph_task(void *Parameter)
   }
 }
 
-void mh_z14a_Input_Task(void *Parameters)
+void mh_z14a_Output_Task(void *Parameters)
 {
 
-  pinMode(co2InputPin, INPUT_PULLDOWN);
+  pinMode(co2OutputPin, INPUT_PULLDOWN);
   dataSensor dataSensor;
   while (true)
   {
-    while (digitalRead(co2InputPin) == LOW)
+    while (digitalRead(co2OutputPin) == LOW)
     {
     };
     long t0 = millis();
-    while (digitalRead(co2InputPin) == HIGH)
+    while (digitalRead(co2OutputPin) == HIGH)
     {
     };
     long t1 = millis();
-    while (digitalRead(co2InputPin) == LOW)
+    while (digitalRead(co2OutputPin) == LOW)
     {
     };
     long t2 = millis();
     long th = t1 - t0;
     long tl = t2 - t1;
     long ppm = 5000L * (th - 2) / (th + tl - 4);
-    while (digitalRead(co2InputPin) == HIGH)
+    while (digitalRead(co2OutputPin) == HIGH)
     {
     }
     dataSensor.co2_Input_C = int(ppm);
-    xQueueSend(xQueue1, &dataSensor.co2_Input_C, portMAX_DELAY);
+    xQueueSend(xQueue1, &dataSensor.co2_Output_C, portMAX_DELAY);
     vTaskDelay(pdMS_TO_TICKS(10000)); // wait for 1 second before reading again
   }
 }
 
-void mh_z14a_Output_task(void *Parameters)
+void mh_z14a_Input_task(void *Parameters)
 {
   dataSensor dataSensor;
   while (true)
@@ -287,8 +290,8 @@ void mh_z14a_Output_task(void *Parameters)
     if (check)
     {
       serialRead();
-      dataSensor.co2_Output_C = int(arrayData[1]);
-      xQueueSend(xQueue2, &dataSensor.co2_Output_C, portMAX_DELAY);
+      dataSensor.co2_Input_C = int(arrayData[1]);
+      xQueueSend(xQueue2, &dataSensor.co2_Input_C, portMAX_DELAY);
     }
 
     Serial2.print("s:");
@@ -601,18 +604,18 @@ void setup()
   //     1);
 
   xTaskCreatePinnedToCore(
-      mh_z14a_Input_Task,
+      mh_z14a_Input_task,
       "mh_z14a_Input_Task", // Task name
-      7000,                 // Stack size (bytes)
+      5000,                 // Stack size (bytes)
       NULL,                 // Parameter
       2,                    // Task priority
       &taskco2In,           // Task handle
       1);
 
   xTaskCreatePinnedToCore(
-      mh_z14a_Output_task,
+      mh_z14a_Output_Task,
       "mh_z14a_Output_task", // Task name
-      5000,                  // Stack size (bytes)
+      7000,                  // Stack size (bytes)
       NULL,                  // Parameter
       1,                     // Task priority
       &taskco2Out,           // Task handle
