@@ -18,34 +18,21 @@ const char *ssid = "Neurabot";
 const char *password = "Kempul4321!";
 
 #define DEVICE "CARBONBOX-V1"
-#define WIFI_SSID "NEURABOT"
+
 #define INFLUXDB_URL "https://us-east-1-1.aws.cloud2.influxdata.com"
-#define INFLUXDB_TOKEN "ZvsZUguul1OE4Mir5GWB3Q0qJrPH-JZ9Iqf2zr5BnSbj8fJKJwS-pT4XgKr3yURQBS10rkiZMakZjo4bAOnSrA=="
-#define INFLUXDB_ORG "b74c259f49b45988"
-#define INFLUXDB_BUCKET "CARBONBOX"
+#define INFLUXDB_TOKEN "e-sfPrVqNAM0JOhs5PzTktyzYvCJVFn28e4gnJP09wihvKp3XUcY-oP69DG9JQ6KF_hOkhcN3oZFqLu35UBHpg=="
+#define INFLUXDB_ORG "7c7b0bb0459b86e8"
+#define INFLUXDB_BUCKET "monitoring"
 // Time zone info
 #define TZ_INFO "UTC7"
 
-Point sensor("wifi_status");
+Point sensor("sensor_data");
 
 // durasi tunggu task
-uint32_t waktuTunggu = 30000;
+uint32_t waktuTunggu = 60000;
 
 // InfluxDB client instance with preconfigured InfluxCloud certificate
 InfluxDBClient clientInflux(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
-
-// InfluxDBClient clientInflux(my_client, INFLUXDB_URL, INFLUXDB_TOKEN);
-// InfluxDBClient influxDbClient(wifiClient, influxDbUrl, influxDbToken);
-// wifi inisialisasi
-// Data point
-// Point sensor("wifi_status");
-
-// mqtt inisislisasi
-// const char *mqtt_server = "test.mosquitto.org";
-// const int mqtt_port = 1883;
-// const char *mqtt_client_id = "ESP32Client";
-
-// PubSubClient mqtt_client(wifi_client);
 
 const int d_sensor = 2;
 int arrayData[d_sensor] = {0, 0};
@@ -73,7 +60,7 @@ QueueHandle_t xQueue7; // tbd
 // };
 
 // #define co2InputPin GPIO_NUM_33   // co2 input
-#define co2OutputPin GPIO_NUM_32  // co2 output
+// #define co2OutputPin GPIO_NUM_32  // co2 output
 #define phPin GPIO_NUM_34         // ph
 #define watherTemPin GPIO_NUM_19  // pin DS18B20
 #define turbidityPin GPIO_NUM_35  // pin turbidity
@@ -150,8 +137,7 @@ void sensor_tbd_task(void *Parameters)
     dataSensor.tbd_C = -1120.4 * square(volt) + 5742.3 * volt - 4353.8;
     if (dataSensor.tbd_C < 0)
     {
-      Serial.println("Under zero");
-      dataSensor.tbd_C = -1.0;
+      dataSensor.tbd_C = 1.0;
       xQueueSend(xQueue7, &dataSensor.tbd_C, portMAX_DELAY);
     }
     else
@@ -252,87 +238,39 @@ void sensor_ph_task(void *Parameter)
 
 void mh_z14a_Output_Task(void *Parameters)
 {
-
-  pinMode(co2OutputPin, INPUT_PULLDOWN);
+  //  pinMode(co2OutputPin, INPUT_PULLDOWN);
   dataSensor dataSensor;
   while (true)
   {
-    while (digitalRead(co2OutputPin) == LOW)
-    {
-    };
-    long t0 = millis();
-    while (digitalRead(co2OutputPin) == HIGH)
-    {
-    };
-    long t1 = millis();
-    while (digitalRead(co2OutputPin) == LOW)
-    {
-    };
-    long t2 = millis();
-    long th = t1 - t0;
-    long tl = t2 - t1;
-    long ppm = 5000L * (th - 2) / (th + tl - 4);
-    while (digitalRead(co2OutputPin) == HIGH)
-    {
-    }
-    dataSensor.co2_Output_C = int(ppm);
+    byte addArray[] = {0xFF, 0x01, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79};
+    char dataValue[9];
+    Serial.write(addArray, 9);
+    Serial.readBytes(dataValue, 9);
+    int resHigh = (int)dataValue[2];
+    int resLow = (int)dataValue[3];
+    int ppm_uart = (resHigh * 256) + resLow;
+    dataSensor.co2_Output_C = int(ppm_uart);
     xQueueSend(xQueue2, &dataSensor.co2_Output_C, portMAX_DELAY);
     vTaskDelay(pdMS_TO_TICKS(waktuTunggu)); // wait for 1 second before reading again
   }
 }
-
+//
 void mh_z14a_Input_task(void *Parameters)
 {
   dataSensor dataSensor;
   while (true)
   {
-    bool check = checkSerial("u");
-    if (check)
-    {
-      serialRead();
-      dataSensor.co2_Input_C = int(arrayData[1]);
-      xQueueSend(xQueue1, &dataSensor.co2_Input_C, portMAX_DELAY);
-    }
-
-    Serial2.print("s:");
+    byte addArray[] = {0xFF, 0x01, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79};
+    char dataValue[9];
+    Serial2.write(addArray, 9);
+    Serial2.readBytes(dataValue, 9);
+    int resHigh = (int)dataValue[2];
+    int resLow = (int)dataValue[3];
+    int ppm_uart = (resHigh * 256) + resLow;
+    dataSensor.co2_Input_C = int(ppm_uart);
+    xQueueSend(xQueue1, &dataSensor.co2_Input_C, portMAX_DELAY);
     vTaskDelay(pdMS_TO_TICKS(waktuTunggu)); // wait for 1 second before reading again
   }
-}
-boolean serialRead()
-{
-  if (Serial2.available() > 0) // program untuk parsing data
-  {
-    String input = Serial2.readStringUntil('\n');
-    input.trim();
-
-    int tempIndex = 0;
-    for (int i = 0; i < d_sensor; i++)
-    {
-      int index = input.indexOf(":", tempIndex);
-      arrayData[i] = input.substring(tempIndex, index).toInt();
-      tempIndex = index + 1;
-    }
-
-    input = "";
-
-    return true;
-  }
-  return false;
-}
-
-boolean checkSerial(String value)
-{
-  if (Serial2.available() > 0)
-  {
-    String input = Serial2.readStringUntil(':');
-    input.trim();
-    if (input == value)
-    {
-      return true;
-    }
-    return false;
-  }
-  return false;
 }
 
 void recive(void *pvParameters)
@@ -347,7 +285,7 @@ void recive(void *pvParameters)
   // Check server connection
   // Connect to InfluxDB
 
-  String filed[7] = {"CO2_IN", "CO2_OUT", "TEMP_UDARA", "RH_UDARA", "TEMP_AIR", "PH", "TBD"};
+  String filed[7] = {"CO2_In", "CO2_Out", "TEMP_UDARA", "RH_UDARA", "TEMP_AIR", "PH", "TBD"};
 
   while (true)
   {
@@ -359,7 +297,7 @@ void recive(void *pvParameters)
         delay(500);
       }
     }
-    Serial.println("Connected to InfluxDB");
+    //    Serial.println("Connected to InfluxDB");
 
     // Receive the data from the queue
     xQueueReceive(xQueue7, &recieveData.tbd_C, portMAX_DELAY);
@@ -537,7 +475,7 @@ void keepWiFiAlive(void *parameter)
 
 void setup()
 {
-  Serial.begin(112500);
+  Serial.begin(9600);
   Serial2.begin(9600);
 
   Serial.println("-----------------DATABIOTA PROJECT---------------------");
@@ -549,13 +487,13 @@ void setup()
   // timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
 
   // Data point
-  Point sensor("wifi_status");
-  sensor.addTag("device", "CarbonBox");
-  sensor.addTag("sensor", "CO2");
-  sensor.addTag("sensor", "pH");
-  sensor.addTag("sensor", "temparature air");
-  sensor.addTag("sensor", "temparature udara");
-  sensor.addTag("sensor", "RH udara");
+  Point sensor("sensor_data");
+  //  sensor.addTag("device", "CarbonBox");
+  //  sensor.addTag("sensor", "CO2");
+  //  sensor.addTag("sensor", "pH");
+  //  sensor.addTag("sensor", "temparature air");
+  //  sensor.addTag("sensor", "temparature udara");
+  //  sensor.addTag("sensor", "RH udara");
 
   // influxDbClient.setConnectionParams(influxDbOrg, influxDbBucket);
 
@@ -606,7 +544,7 @@ void setup()
   xTaskCreatePinnedToCore(
       mh_z14a_Input_task,
       "mh_z14a_Input_Task", // Task name
-      5000,                 // Stack size (bytes)
+      7000,                 // Stack size (bytes)
       NULL,                 // Parameter
       2,                    // Task priority
       &taskco2In,           // Task handle
